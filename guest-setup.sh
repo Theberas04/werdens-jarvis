@@ -31,22 +31,130 @@ PIPER_STEM_URL="${PIPER_STEM_URL:-https://github.com/rhasspy/piper/releases/down
 
 JARVIS=/opt/jarvis
 FOUTEN=0
+APT_LOG=/tmp/jarvis-apt.log
 ok()   { printf '  ok    %s\n' "$*"; }
 waarschuwing() { printf '  letop %s\n' "$*"; }
 fout() { printf '  [fout] %s\n' "$*"; FOUTEN=$((FOUTEN + 1)); }
 stap() { printf '\n== %s\n' "$*"; }
 
+# Bestanden ophalen zonder van curl afhankelijk te zijn: eerst curl, dan wget,
+# dan python3 (dat staat op Debian altijd). Alle drie met een IPv4-voorkeur,
+# want op een verse container mislukt IPv6 naar de spiegels vaak alsnog.
+haal() {
+    _url="$1"; _doel="$2"; _max="${3:-60}"
+    if command -v curl >/dev/null 2>&1; then
+        curl -4 -fsSL --max-time "$_max" -o "$_doel" "$_url" && return 0
+    fi
+    if command -v wget >/dev/null 2>&1; then
+        wget -4 -q -T "$_max" -O "$_doel" "$_url" && return 0
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - "$_url" "$_doel" "$_max" <<'PY' && return 0
+import sys, urllib.request
+url, doel, max_seconden = sys.argv[1], sys.argv[2], int(sys.argv[3])
+try:
+    with urllib.request.urlopen(url, timeout=max_seconden) as antwoord:
+        with open(doel, "wb") as f:
+            f.write(antwoord.read())
+except Exception:
+    sys.exit(1)
+PY
+    fi
+    return 1
+}
+
+netwerk_uitleg() {
+    if ! getent hosts deb.debian.org >/dev/null 2>&1; then
+        fout "geen DNS in de container. Zet een naamserver en probeer opnieuw:"
+        printf '         pct exec 140 -- sh -c "echo nameserver 1.1.1.1 > /etc/resolv.conf"\n'
+    elif ! python3 -c "import socket;socket.create_connection(('deb.debian.org',80),5)" >/dev/null 2>&1; then
+        fout "wel DNS, geen verbinding met de Debian-spiegel. Controleer de uitgaande route van de container."
+    else
+        waarschuwing "de spiegel is bereikbaar; de fout zit in apt zelf (zie de regels hierboven)"
+    fi
+    if grep -qi "lock" "$APT_LOG" 2>/dev/null; then
+        fout "een andere pakketbeheerder houdt de dpkg-lock vast (apt-daily of unattended-upgrades)."
+        printf '         Wacht een minuut en probeer opnieuw:\n'
+        printf '         pct exec 140 -- pkill -f unattended-upgrades\n'
+    fi
+    if grep -qi "no space" "$APT_LOG" 2>/dev/null; then
+        fout "de schijf van de container is vol; geef hem meer ruimte en probeer opnieuw."
+    fi
+}
+
+# Een verse container start vaak direct apt-daily of unattended-upgrades, die de
+# dpkg-lock vasthouden; elk apt-commando mislukt dan met "Could not get lock".
+apt_rust() {
+    for _ in $(seq 1 60); do
+        _bezig=0
+        for _p in /proc/[0-9]*/comm; do
+            case "$(cat "$_p" 2>/dev/null)" in
+                apt|apt-get|dpkg|unattended-upgr*|apt-helper) _bezig=1; break ;;
+            esac
+        done
+        [ "$_bezig" -eq 0 ] && return 0
+        sleep 2
+    done
+    waarschuwing "een andere pakketbeheerder blijft actief; ik probeer het toch"
+    return 0
+}
+
 # --------------------------------------------------------------- systeem
 
 stap "Systeem klaarzetten"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq >/dev/null 2>&1 || waarschuwing "apt-get update gaf een fout"
-if apt-get install -y -qq --no-install-recommends asterisk ffmpeg curl ca-certificates xz-utils \
-        iproute2 procps >/dev/null 2>&1; then
+
+if ! getent hosts deb.debian.org >/dev/null 2>&1; then
+    waarschuwing "geen naamserver in de container; apt heeft misschien geen verbinding"
+    echo "nameserver 1.1.1.1" > /etc/resolv.conf 2>/dev/null || true
+fi
+
+APT_BIJ=0
+for poging in 1 2 3 4; do
+    apt_rust
+    if apt-get update -qq -o Acquire::ForceIPv4=true >"$APT_LOG" 2>&1; then
+        APT_BIJ=1
+        break
+    fi
+    waarschuwing "apt-get update mislukte (poging $poging van 4)"
+    sleep 10
+done
+if [ "$APT_BIJ" -eq 1 ]; then
+    ok "pakketlijsten bijgewerkt"
+else
+    fout "apt-get update mislukte; laatste regels:"
+    tail -n 8 "$APT_LOG" | sed 's/^/         /'
+    netwerk_uitleg
+fi
+
+# Eerst het gereedschap dat we zelf nodig hebben, dan de rest: zo heb je bij een
+# fout meteen een werkende curl in plaats van een lange lijst mislukkingen.
+if apt-get install -y -qq --no-install-recommends curl ca-certificates >>"$APT_LOG" 2>&1; then
+    ok "curl en certificaten geinstalleerd"
+else
+    fout "kon curl niet installeren; laatste regels:"
+    tail -n 8 "$APT_LOG" | sed 's/^/         /'
+fi
+
+apt_rust
+if apt-get install -y -qq --no-install-recommends asterisk ffmpeg xz-utils iproute2 procps >>"$APT_LOG" 2>&1; then
     ok "asterisk, ffmpeg en hulpmiddelen geinstalleerd"
 else
-    fout "kon de pakketten niet installeren"
+    fout "kon asterisk/ffmpeg niet installeren; laatste regels:"
+    tail -n 8 "$APT_LOG" | sed 's/^/         /'
 fi
+command -v ffmpeg >/dev/null 2>&1 || fout "ffmpeg staat niet op deze machine (nodig voor het omrekenen van 8 kHz telefoonaudio)"
+command -v asterisk >/dev/null 2>&1 || fout "asterisk staat niet op deze machine"
+
+# Zonder deze twee heeft doorwerken geen zin: dan lag het aan apt, en dat is hier
+# boven al te lezen. Stop meteen, zodat de log kort blijft.
+if ! command -v asterisk >/dev/null 2>&1 || ! command -v ffmpeg >/dev/null 2>&1; then
+    netwerk_uitleg
+    fout "gestopt: asterisk en ffmpeg zijn nodig en konden niet geinstalleerd worden."
+    echo "APT-MISLUKT"
+    exit 1
+fi
+
 mkdir -p "$JARVIS" /opt/jarvis/jarvis /opt/jarvis/alarm /opt/jarvis/bin /opt/jarvis/modellen \
          /etc/jarvis /var/lib/jarvis /var/log/jarvis /var/lib/asterisk/sounds/jarvis
 chmod 750 /etc/jarvis
@@ -57,14 +165,14 @@ stap "Programma ophalen"
 CODE="jarvis/__init__.py jarvis/config.py jarvis/stem.py jarvis/telefoon.py jarvis/brein.py jarvis/pagina.py jarvis/jarvisd.py jarvis/instellingen.py alarm/__init__.py alarm/wacht.py tools/__init__.py tools/proefgesprek.py"
 CODE_FOUTEN=0
 for bestand in $CODE; do
-    if curl -fsSL --max-time 60 -o "$JARVIS/$bestand" "$RAW/$bestand"; then
+    if haal "$RAW/$bestand" "$JARVIS/$bestand" 60; then
         ok "$bestand"
     else
         fout "kon $bestand niet ophalen van $RAW"
         CODE_FOUTEN=$((CODE_FOUTEN + 1))
     fi
 done
-[ "$CODE_FOUTEN" -eq 0 ] || { echo "Zonder code gaat het niet verder."; exit 1; }
+[ "$CODE_FOUTEN" -eq 0 ] || { echo "Zonder code gaat het niet verder."; netwerk_uitleg; exit 1; }
 
 # --------------------------------------------------------------- whisper
 
@@ -73,8 +181,8 @@ if [ -x "$JARVIS/bin/whisper/whisper-server" ]; then
     ok "whisper-server staat er al"
 else
     TMP="$(mktemp -d)"
-    if curl -fsSL --max-time 300 -o "$TMP/whisper.tar.gz" \
-        "https://github.com/ggml-org/whisper.cpp/releases/download/$WHISPER_TAG/whisper-bin-ubuntu-x64.tar.gz" \
+    if haal "https://github.com/ggml-org/whisper.cpp/releases/download/$WHISPER_TAG/whisper-bin-ubuntu-x64.tar.gz" \
+        "$TMP/whisper.tar.gz" 300 \
         && mkdir -p "$JARVIS/bin/whisper" \
         && tar -xzf "$TMP/whisper.tar.gz" -C "$JARVIS/bin/whisper" --strip-components=1; then
         ok "whisper.cpp uitgepakt"
@@ -99,8 +207,8 @@ fi
 
 MODEL="$JARVIS/modellen/ggml-$STT_MODEL.bin"
 if [ ! -s "$MODEL" ]; then
-    if curl -fsSL --max-time 600 -o "$MODEL" \
-        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$STT_MODEL.bin"; then
+    if haal "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$STT_MODEL.bin" \
+        "$MODEL" 600; then
         ok "model ggml-$STT_MODEL.bin ($(du -h "$MODEL" | cut -f1))"
     else
         fout "kon het whisper-model niet ophalen"
@@ -114,8 +222,8 @@ fi
 stap "Spraak uit (piper $PIPER_TAG)"
 if [ ! -x "$JARVIS/bin/piper/piper" ]; then
     TMP="$(mktemp -d)"
-    if curl -fsSL --max-time 300 -o "$TMP/piper.tar.gz" \
-        "https://github.com/rhasspy/piper/releases/download/$PIPER_TAG/piper_amd64.tar.gz" \
+    if haal "https://github.com/rhasspy/piper/releases/download/$PIPER_TAG/piper_amd64.tar.gz" \
+        "$TMP/piper.tar.gz" 300 \
         && mkdir -p "$JARVIS/bin/piper" \
         && tar -xzf "$TMP/piper.tar.gz" -C "$JARVIS/bin/piper" --strip-components=1; then
         ok "piper uitgepakt"
@@ -135,7 +243,7 @@ fi
 STEM_ONNX="$JARVIS/modellen/nl_NL-rdh-medium.onnx"
 if [ ! -s "$STEM_ONNX" ]; then
     TMP="$(mktemp -d)"
-    if curl -fsSL --max-time 300 -o "$TMP/stem.tar.gz" "$PIPER_STEM_URL" \
+    if haal "$PIPER_STEM_URL" "$TMP/stem.tar.gz" 300 \
         && tar -xzf "$TMP/stem.tar.gz" -C "$TMP"; then
         ONNX="$(find "$TMP" -maxdepth 1 -name '*.onnx' | head -1)"
         JSON="$(find "$TMP" -maxdepth 1 -name '*.onnx.json' | head -1)"
@@ -219,7 +327,7 @@ stap "Asterisk instellen"
 mkdir -p "$JARVIS/asterisk"
 SJABLONEN=0
 for bestand in pjsip.conf extensions.conf manager.conf rtp.conf modules.conf logger.conf; do
-    if curl -fsSL --max-time 60 -o "$JARVIS/asterisk/$bestand" "$RAW/asterisk/$bestand"; then
+    if haal "$RAW/asterisk/$bestand" "$JARVIS/asterisk/$bestand" 60; then
         SJABLONEN=$((SJABLONEN + 1))
     else
         fout "kon asterisk/$bestand niet ophalen"
@@ -248,7 +356,7 @@ fi
 
 stap "Diensten starten"
 for eenheid in jarvisd.service jarvis-wacht.service jarvis-wacht.timer; do
-    if curl -fsSL --max-time 60 -o "/etc/systemd/system/$eenheid" "$RAW/systemd/$eenheid"; then
+    if haal "$RAW/systemd/$eenheid" "/etc/systemd/system/$eenheid" 60; then
         ok "$eenheid"
     else
         fout "kon systemd/$eenheid niet ophalen"
@@ -259,7 +367,7 @@ systemctl daemon-reload
 
 # waakhond-controles: alleen als er nog geen bestand staat
 if [ ! -f /etc/jarvis/waken.json ]; then
-    curl -fsSL --max-time 60 -o /etc/jarvis/waken.json "$RAW/alarm/waken.json" 2>/dev/null \
+    haal "$RAW/alarm/waken.json" /etc/jarvis/waken.json 60 \
         && ok "/etc/jarvis/waken.json (voorbeeld)" \
         || waarschuwing "geen voorbeeld voor waken.json gevonden"
 fi

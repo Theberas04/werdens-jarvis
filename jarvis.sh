@@ -171,7 +171,9 @@ if [ -z "$CTID" ]; then
     exit 1
 fi
 if pct status "$CTID" >/dev/null 2>&1; then
-    fout "container $CTID bestaat al. Kies een ander ID of ruim hem eerst op: pct destroy $CTID"
+    fout "container $CTID bestaat al. Twee mogelijkheden:"
+    zeg  "       pct destroy $CTID          (opnieuw beginnen, de container is nog leeg)"
+    zeg  "       CTID=141 bash <(curl -fsSL $RAW/jarvis.sh)    (een ander nummer gebruiken)"
     exit 1
 fi
 ok "container-ID $CTID"
@@ -225,6 +227,21 @@ if [ -z "$IP" ]; then
     exit 1
 fi
 ok "IP-adres $IP"
+
+# Vooraf controleren of de container internet heeft. Zonder dat mislukt de
+# hele installatie (apt, GitHub, Hugging Face) en zoekt de gebruiker in de
+# verkeerde hoek.
+if pct exec "$CTID" -- bash -c 'exec 3<>/dev/tcp/deb.debian.org/80' >/dev/null 2>&1; then
+    ok "internet vanuit de container werkt"
+else
+    fout "de container kan deb.debian.org niet bereiken"
+    zeg "     DNS in de container:"
+    pct exec "$CTID" -- sh -c 'cat /etc/resolv.conf 2>/dev/null | sed "s/^/       /"'
+    zeg "     Controleer op de host het uitgaande verkeer van $CTID, of probeer:"
+    zeg "       pct exec $CTID -- sh -c 'echo nameserver 1.1.1.1 > /etc/resolv.conf'"
+    zeg "     en daarna opnieuw:  bash <(curl -fsSL $RAW/jarvis.sh)"
+    exit 1
+fi
 
 # --------------------------------------------------------- installeren
 
