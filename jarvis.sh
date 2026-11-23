@@ -52,7 +52,7 @@ BREIN_MODEL="${BREIN_MODEL:-hermes-agent}"
 STT_MODEL="${STT_MODEL:-base}"
 CHEAPCONNECT_HOST="${CHEAPCONNECT_HOST:-sip.cheapconnect.net}"
 
-BESTANDEN="guest-setup.sh jarvis.sh jarvis/__init__.py jarvis/config.py jarvis/stem.py jarvis/telefoon.py jarvis/brein.py jarvis/pagina.py jarvis/jarvisd.py alarm/__init__.py alarm/wacht.py alarm/waken.json asterisk/pjsip.conf asterisk/extensions.conf asterisk/manager.conf asterisk/rtp.conf asterisk/modules.conf asterisk/logger.conf systemd/jarvisd.service systemd/jarvis-wacht.service systemd/jarvis-wacht.timer tools/__init__.py tools/proefgesprek.py deploy/update-from-github.sh"
+BESTANDEN="guest-setup.sh jarvis.sh jarvis/__init__.py jarvis/config.py jarvis/stem.py jarvis/telefoon.py jarvis/brein.py jarvis/pagina.py jarvis/jarvisd.py jarvis/instellingen.py alarm/__init__.py alarm/wacht.py alarm/waken.json asterisk/pjsip.conf asterisk/extensions.conf asterisk/manager.conf asterisk/rtp.conf asterisk/modules.conf asterisk/logger.conf systemd/jarvisd.service systemd/jarvis-wacht.service systemd/jarvis-wacht.timer tools/__init__.py tools/proefgesprek.py deploy/update-from-github.sh"
 
 FOUTEN=0
 zeg()  { printf '%s\n' "$*"; }
@@ -292,7 +292,12 @@ fi
 stap "Klaar"
 
 zeg "  Statuspagina:  http://$IP:$WEB_POORT/"
+zeg "  Instellingen:  http://$IP:$WEB_POORT/instellingen   <- hier vul je je nummer en gegevens in"
+zeg "                 (hoeft dus niet tijdens de installatie)"
 zeg "  Container:     $CTID ($CTNAME, ${CORES} core / ${RAM} MB)"
+zeg ""
+zeg "  Eerste keer: vul op de instellingenpagina je trunk-nummer, het wachtwoord"
+zeg "  van CheapConnect en je mobiele nummer in; Asterisk laadt de trunk meteen in."
 zeg ""
 zeg "  Zo bel je Jarvis:      jouw CheapConnect-nummer  ->  container $CTID"
 zeg "  Zo belt Jarvis jou:    knop op de statuspagina, of:"

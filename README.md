@@ -27,26 +27,48 @@ een container herstarten).
 
 ## Installeren (Proxmox)
 
-Op je Proxmox-host als root:
+Eén regel op je Proxmox-host als root — je hoeft **niets** in te vullen:
 
 ```bash
-TRUNK_NUMMER=31612345678 TRUNK_WACHTWOORD=geheim MIJN_MOBIEL=31612345678 \
-BREIN_SLEUTEL=jouw-hermes-api-sleutel \
 bash <(curl -fsSL https://raw.githubusercontent.com/Theberas04/werdens-jarvis/main/jarvis.sh)
 ```
 
-Zonder variabelen werkt het ook: dan zet je de trunk-gegevens later in
-`/etc/jarvis/jarvis.env` in de container en herstart je `jarvisd`. Het script
-maakt de container, installeert Asterisk + spraak + modellen (een paar minuten,
-ongeveer 1 GB aan modellen), controleert alles en print aan het eind wat je
-waar kunt vinden.
+Het script maakt de container, installeert Asterisk + spraak + modellen (een
+paar minuten, ongeveer 1 GB aan modellen) en print aan het eind het adres van de
+statuspagina. Je nummer, je wachtwoord en je brein vul je daarna in op de
+instellingenpagina — zie hieronder.
+
+Wil je het toch meteen meegeven (handig voor een tweede installatie), dan kan
+dat: `TRUNK_NUMMER=… TRUNK_WACHTWOORD=… MIJN_MOBIEL=… BREIN_SLEUTEL=…` vóór het
+commando.
 
 Draai je geen Proxmox maar een gewone Debian-machine, dan kun je
 `guest-setup.sh` direct als root uitvoeren.
 
+## Invullen op de pagina (geen herstart nodig)
+
+![instellingen](docs/img/instellingen-desktop.png)
+
+Open `http://<ip-van-de-container>:8099/instellingen` en vul in:
+
+- je **trunk-nummer** en **wachtwoord** uit het CheapConnect-portaal;
+- het **mobiele nummer** dat Jarvis mag bellen;
+- de **sleutel van je brein** (bij Hermes de `API_SERVER_KEY` uit
+  `~/.hermes/.env`) en eventueel een ander model;
+- wat de **waakhond** in de gaten moet houden.
+
+Opslaan is genoeg: Asterisk leest de nieuwe trunk meteen in en de dienst gebruikt
+de nieuwe waarden zonder herstart. Wat er nog ontbreekt, staat als gele balk
+bovenaan de statuspagina. Wachtwoorden worden nooit meer aan de pagina
+teruggegeven: een geheim veld leeg laten betekent "laat staan".
+
+Dezelfde waarden blijven ook gewoon in `/etc/jarvis/jarvis.env` staan, dus met de
+hand aanpassen kan nog steeds (en met `systemctl restart jarvisd`).
+
 ## Instellingen
 
-Alles staat in `/etc/jarvis/jarvis.env`:
+De pagina `/instellingen` is de makkelijkste weg; alles komt in
+`/etc/jarvis/jarvis.env` terecht:
 
 - `TRUNK_NUMMER`, `TRUNK_WACHTWOORD`, `CHEAPCONNECT_HOST` — je SIP-trunk
 - `MIJN_MOBIEL` — het nummer dat Jarvis belt, internationaal zonder `+`
@@ -56,7 +78,8 @@ Alles staat in `/etc/jarvis/jarvis.env`:
 - `JARVIS_BEGROETING`, `JARVIS_STILTE_MS`, `JARVIS_DREMPEL`, `JARVIS_MAX_GESPREK`
 - `JARVIS_GEEN_BELLEN=1` — testen zonder echt te bellen
 
-Na een wijziging: `systemctl restart jarvisd`. Zie
+Op de pagina opslaan past alles meteen toe; pas je het bestand met de hand aan,
+dan is `systemctl restart jarvisd` nodig. Zie
 [docs/INSTALLATIE.md](docs/INSTALLATIE.md) voor alle knoppen en
 [docs/TELEFOON.md](docs/TELEFOON.md) voor de trunk en je router.
 
@@ -127,6 +150,7 @@ CheapConnect-trunk (pjsip) <-> Asterisk (dialplan) <-> AudioSocket (TCP)
 | `jarvis/telefoon.py` | AudioSocket-protocol en de Asterisk-manager (AMI) |
 | `jarvis/brein.py` | het gesprek met je taalmodel |
 | `jarvis/pagina.py` | statuspagina en API |
+| `jarvis/instellingen.py` | instellingen opschrijven en Asterisk opnieuw configureren |
 | `alarm/wacht.py` | de waakhond die belt |
 | `asterisk/` | trunk, dialplan, manager, RTP, modules, logboek |
 | `tools/proefgesprek.py` | testgesprek zonder telefoon |

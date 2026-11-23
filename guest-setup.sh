@@ -54,7 +54,7 @@ chmod 750 /etc/jarvis
 # ------------------------------------------------------------------ code
 
 stap "Programma ophalen"
-CODE="jarvis/__init__.py jarvis/config.py jarvis/stem.py jarvis/telefoon.py jarvis/brein.py jarvis/pagina.py jarvis/jarvisd.py alarm/__init__.py alarm/wacht.py tools/__init__.py tools/proefgesprek.py"
+CODE="jarvis/__init__.py jarvis/config.py jarvis/stem.py jarvis/telefoon.py jarvis/brein.py jarvis/pagina.py jarvis/jarvisd.py jarvis/instellingen.py alarm/__init__.py alarm/wacht.py tools/__init__.py tools/proefgesprek.py"
 CODE_FOUTEN=0
 for bestand in $CODE; do
     if curl -fsSL --max-time 60 -o "$JARVIS/$bestand" "$RAW/$bestand"; then
@@ -216,32 +216,32 @@ ok "instellingen geschreven"
 # --------------------------------------------------------- asterisk-config
 
 stap "Asterisk instellen"
+mkdir -p "$JARVIS/asterisk"
+SJABLONEN=0
 for bestand in pjsip.conf extensions.conf manager.conf rtp.conf modules.conf logger.conf; do
-    TMPCONF="$(mktemp)"
-    if ! curl -fsSL --max-time 60 -o "$TMPCONF" "$RAW/asterisk/$bestand"; then
+    if curl -fsSL --max-time 60 -o "$JARVIS/asterisk/$bestand" "$RAW/asterisk/$bestand"; then
+        SJABLONEN=$((SJABLONEN + 1))
+    else
         fout "kon asterisk/$bestand niet ophalen"
-        rm -f "$TMPCONF"
-        continue
     fi
-    sed -e "s|__TRUNK_NUMMER__|$TRUNK_NUMMER|g" \
-        -e "s|__TRUNK_WACHTWOORD__|$TRUNK_WACHTWOORD|g" \
-        -e "s|__CHEAPCONNECT_HOST__|$CHEAPCONNECT_HOST|g" \
-        -e "s|__AMI_SECRET__|$AMI_SECRET|g" \
-        -e "s|__SOCKET__|127.0.0.1:9092|g" \
-        "$TMPCONF" > "/etc/asterisk/$bestand"
-    chown asterisk:asterisk "/etc/asterisk/$bestand" 2>/dev/null || true
-    chmod 640 "/etc/asterisk/$bestand"
-    ok "/etc/asterisk/$bestand"
-    rm -f "$TMPCONF"
 done
+if [ "$SJABLONEN" -eq 6 ]; then
+    ok "zes sjablonen in $JARVIS/asterisk (het dashboard hergebruikt ze)"
+fi
+
+# De configuratie wordt door de programmatuur zelf geschreven, zodat de
+# installatie en de instellingenpagina exact dezelfde weg volgen.
+mkdir -p /etc/asterisk
+if (cd "$JARVIS" && python3 -m jarvis.instellingen --asterisk); then
+    ok "/etc/asterisk gevuld uit de sjablonen"
+else
+    fout "kon /etc/asterisk niet vullen"
+fi
 mkdir -p /var/lib/asterisk/sounds/jarvis
 chown -R asterisk:asterisk /var/lib/asterisk/sounds/jarvis 2>/dev/null || true
 
-if [ -z "$TRUNK_NUMMER" ] || [ -z "$TRUNK_WACHTWOORD" ]; then
-    waarschuwing "geen trunk-gegevens meegegeven: vul TRUNK_NUMMER en TRUNK_WACHTWOORD in /etc/jarvis/jarvis.env"
-fi
-if [ -z "$MIJN_MOBIEL" ]; then
-    waarschuwing "geen MIJN_MOBIEL: Jarvis kan jou nog niet bellen"
+if [ -z "$TRUNK_NUMMER" ] || [ -z "$TRUNK_WACHTWOORD" ] || [ -z "$MIJN_MOBIEL" ]; then
+    waarschuwing "nog niet alles is ingevuld: dat doe je op http://<ip>:$WEB_POORT/instellingen"
 fi
 
 # ------------------------------------------------------------- diensten
@@ -315,7 +315,7 @@ echo
 if asterisk -rx "pjsip show registrations" 2>/dev/null | grep -qi registered; then
     echo "TRUNK GEMELD"
 else
-    echo "TRUNK NIET GEMELD"
+    echo "TRUNK NOG NIET GEMELD (vul je nummer en wachtwoord in op de instellingenpagina)"
     asterisk -rx "pjsip show registrations" 2>/dev/null | sed 's/^/       /'
 fi
 

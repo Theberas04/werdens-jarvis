@@ -60,6 +60,26 @@ ul.gesprek li:last-child{border-bottom:0}
  border:1px solid var(--line);color:var(--txt2)}
 code{background:var(--pane3);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px}
 p.uitleg{color:var(--txt2);font-size:13.5px;margin:8px 0 0}
+nav.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+nav.tabs a{padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--pane);
+ color:var(--txt2);text-decoration:none;font-size:13.5px;font-weight:600}
+nav.tabs a.aan{background:var(--accent);border-color:var(--accent);color:#fff}
+.groep{border:1px solid var(--line);border-radius:14px;background:var(--pane);margin-bottom:16px;overflow:hidden}
+.groep-kop{padding:13px 16px;border-bottom:1px solid var(--line);background:var(--pane2);font-weight:650;font-size:14px}
+.groep-body{padding:6px 16px 16px}
+.veld{display:flex;flex-direction:column;gap:5px;margin-top:14px}
+.veld label{font-weight:600;font-size:13.5px}
+.veld .uitleg{color:var(--txt2);font-size:12.5px;margin:0}
+.veld input[type=text],.veld input[type=password],.veld input[type=number],.veld select{width:100%;
+ border:1px solid var(--line);border-radius:10px;padding:9px 11px;font:inherit;background:var(--pane);color:var(--txt)}
+.veld input:focus,.veld select:focus,.veld textarea:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.veld.fout input,.veld.fout select{border-color:var(--fout)}
+.veld .foutmelding{color:var(--fout);font-size:12.5px}
+.vlak{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:13.5px}
+.vlak input{width:auto}
+.let{background:#fff8e6;border:1px solid #f0dfae;border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:13.5px}
+.let b{color:var(--let)}
+.melding ul{margin:6px 0 0 18px;padding:0}
 footer{color:var(--txt2);font-size:12.5px;margin-top:26px;text-align:center}
 @media (max-width:820px){
   .raster{grid-template-columns:1fr}
@@ -165,6 +185,13 @@ PAGINA = """<!doctype html>
       <span class="badge">up <span id="sinds">?</span></span></div>
   </header>
 
+  <nav class="tabs">
+    <a href="/" class="aan">Status</a>
+    <a href="/instellingen">Instellingen</a>
+  </nav>
+
+  __LETOP__
+
   <div class="raster">
     <div class="kaart">
       <div class="kaart-kop">Telefoonlijn</div>
@@ -218,6 +245,184 @@ PAGINA = """<!doctype html>
 </html>"""
 
 
+NAV = """<nav class="tabs">
+    <a href="/" class="%s">Status</a>
+    <a href="/instellingen" class="%s">Instellingen</a>
+  </nav>"""
+
+JS_INSTELLINGEN = """
+function q(s){return document.querySelector(s)}
+function toon(regels,isFout){
+  var m=q('#melding');
+  m.className='melding'+(isFout?' fout':'');
+  var ul=document.createElement('ul');
+  for(var i=0;i<regels.length;i++){ var li=document.createElement('li'); li.textContent=regels[i]; ul.appendChild(li); }
+  m.innerHTML=''; m.appendChild(ul); m.hidden=false;
+}
+function verzamel(){
+  var uit={};
+  var velden=document.querySelectorAll('[data-sleutel]');
+  for(var i=0;i<velden.length;i++){
+    var el=velden[i], sleutel=el.getAttribute('data-sleutel');
+    if(el.type==='checkbox'){ uit[sleutel]=el.checked?'1':'0'; continue; }
+    var waarde=(el.value||'').trim();
+    var geheim=el.getAttribute('data-geheim')==='1';
+    if(geheim && !waarde){ continue; }
+    uit[sleutel]=waarde;
+  }
+  return uit;
+}
+function bewaar(){
+  var velden=verzamel();
+  var waken=q('#waken').value;
+  var oud=document.querySelectorAll('.veld.fout');
+  for(var i=0;i<oud.length;i++){ oud[i].className='veld'; }
+  var knop=q('#bewaarknop'); knop.disabled=true;
+  toon(['Bezig met opslaan...'],false);
+  fetch('/api/instellingen',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({velden:velden,waken:waken})})
+    .then(function(r){return r.json()}).then(function(d){
+      knop.disabled=false;
+      if(!d.gelukt){
+        var regels=[];
+        for(var k in (d.fouten||{})){
+          regels.push(k+': '+d.fouten[k]);
+          var vak=document.querySelector('[data-sleutel="'+k+'"]');
+          if(vak){ var w=vak.closest('.veld'); if(w) w.className='veld fout'; }
+        }
+        if(!regels.length) regels.push(d.fout||'opslaan mislukte');
+        toon(regels,true);
+        return;
+      }
+      var uit=['Opgeslagen.']; 
+      if(d.asterisk_mislukt && d.asterisk_mislukt.length){ uit.push('Let op: '+d.asterisk_mislukt.join(', ')+' kon niet geschreven worden.'); }
+      if(d.trunk_ok){ uit.push('De trunk is geregistreerd bij CheapConnect.'); }
+      else { uit.push('De trunk is nog niet geregistreerd: controleer nummer en wachtwoord hierboven.'+(d.trunk_detail?(' ('+d.trunk_detail+')'):'')); }
+      if(d.proef){ if(d.proef.klaar){ uit.push('Proef: spraak en brein doen het.'); } else { uit.push('Proef mislukte: '+(d.proef.fout||'onbekend')); } }
+      toon(uit,!d.trunk_ok);
+      laadStatus();
+    }).catch(function(e){ knop.disabled=false; toon(['Opslaan mislukte: '+e],true); });
+}
+function laadStatus(){
+  fetch('/api/status').then(function(r){return r.json()}).then(function(d){
+    var l=q('#lijnstatus');
+    if(!l) return;
+    if(d.asterisk && d.asterisk.draait){
+      l.textContent = d.asterisk.trunk_geregistreerd ? 'Asterisk draait, trunk geregistreerd.' : 'Asterisk draait, trunk nog niet geregistreerd.';
+    } else {
+      l.textContent = 'Asterisk antwoordt niet op deze machine.';
+    }
+  }).catch(function(){});
+}
+document.addEventListener('DOMContentLoaded', function(){
+  laadStatus();
+  q('#bewaarknop').addEventListener('click', bewaar);
+});
+"""
+
+INSTELLINGEN_BIJZONDER = """<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis &middot; instellingen</title>
+<style>__STIJL__</style>
+</head>
+<body>
+<div class="wikkel">
+  <header class="kop">
+    <div class="merk">J</div>
+    <div>
+      <h1>Instellingen</h1>
+      <div class="tagline">Vul hier je nummer en je gegevens in; de rest gebeurt vanzelf.</div>
+    </div>
+  </header>
+  __NAV__
+  <div class="let">Asterisk: <b id="lijnstatus">status ophalen...</b> Na opslaan leest Asterisk de nieuwe
+  trunk meteen in &mdash; je hoeft niets te herstarten.</div>
+  __FORMULIER__
+  <div class="groep">
+    <div class="groep-kop">Waakhond: wat moet er in de gaten gehouden worden</div>
+    <div class="groep-body">
+      <p class="uitleg">Elke regel is een controle: een naam en een adres dat HTTP 200 teruggeeft.
+      Gaat er één van goed naar stuk, dan belt Jarvis.</p>
+      <div class="veld"><label for="waken">Controles (JSON)</label>
+        <textarea id="waken" spellcheck="false">__WAKEN__</textarea>
+        <span class="uitleg">Velden per controle: naam, url, code, tijd, dringend, meld_herstel, extra.</span>
+      </div>
+    </div>
+  </div>
+  <div class="knoppen"><button class="knop primair" id="bewaarknop">Opslaan en trunk herladen</button></div>
+  <div class="melding" id="melding" hidden></div>
+  <p class="uitleg">De sleutels en wachtwoorden worden nooit meer aan deze pagina teruggegeven: laat een
+  geheim veld leeg om te bewaren wat er staat.</p>
+  <footer>Jarvis &middot; &copy; Werdens Media</footer>
+</div>
+<script>__JS__</script>
+</body>
+</html>"""
+
+
+def _veld_html(sleutel, meta, waarde):
+    import html as _html
+    soort = meta["soort"]
+    naam = _html.escape(sleutel)
+    label = _html.escape(meta["label"])
+    uitleg = _html.escape(meta["uitleg"])
+    if soort.startswith("keuze"):
+        opties = soort.split(":", 1)[1].split("|")
+        rijen = ""
+        for optie in opties:
+            gekozen = " selected" if str(waarde) == optie else ""
+            rijen += '<option value="%s"%s>%s</option>' % (_html.escape(optie), gekozen, _html.escape(optie))
+        veld = '<select data-sleutel="%s" id="%s">%s</select>' % (naam, naam, rijen)
+    elif soort == "vlag":
+        aangevinkt = " checked" if str(waarde) in ("1", "ja", "true", "aan") else ""
+        return ('<div class="veld"><label class="vlak"><input type="checkbox" data-sleutel="%s" id="%s"%s>'
+                '%s</label><span class="uitleg">%s</span></div>'
+                % (naam, naam, aangevinkt, label, uitleg))
+    elif meta["geheim"]:
+        hint = "ingevuld &mdash; laat leeg om te bewaren" if waarde else "nog niet ingevuld"
+        veld = ('<input type="password" data-sleutel="%s" data-geheim="1" id="%s" placeholder="%s" autocomplete="new-password">'
+                % (naam, naam, hint))
+    elif soort == "getal":
+        veld = '<input type="number" data-sleutel="%s" id="%s" value="%s">' % (
+            naam, naam, _html.escape(str(waarde)))
+    else:
+        veld = '<input type="text" data-sleutel="%s" id="%s" value="%s">' % (
+            naam, naam, _html.escape(str(waarde)))
+    return ('<div class="veld"><label for="%s">%s</label>%s<span class="uitleg">%s</span></div>'
+            % (naam, label, veld, uitleg))
+
+
+def _formulier_html(samenvatting):
+    import html as _html
+    uit = ""
+    per_groep = {}
+    for sleutel, meta in samenvatting["velden"].items():
+        per_groep.setdefault(meta["groep"], []).append((sleutel, meta))
+    for groep, titel in samenvatting["groepen"].items():
+        velden = per_groep.get(groep)
+        if not velden:
+            continue
+        uit += ('<div class="groep"><div class="groep-kop">%s</div><div class="groep-body">'
+                % _html.escape(titel))
+        for sleutel, meta in velden:
+            uit += _veld_html(sleutel, meta, samenvatting["waarden"].get(sleutel, ""))
+        uit += "</div></div>"
+    return uit
+
+
+def _instellingen_pagina(jarvis):
+    from . import instellingen
+    samenvatting = instellingen.samenvatting()
+    tekst = INSTELLINGEN_BIJZONDER.replace("__STIJL__", STIJL).replace("__JS__", JS_INSTELLINGEN)
+    tekst = tekst.replace("__NAV__", NAV % ("", "aan"))
+    tekst = tekst.replace("__FORMULIER__", _formulier_html(samenvatting))
+    waken = html.escape(instellingen.lees_waken())
+    return tekst.replace("__WAKEN__", waken)
+
+
 def _pagina(jarvis):
     cfg = jarvis.cfg
     tekst = PAGINA.replace("__STIJL__", STIJL).replace("__JS__", JS)
@@ -226,7 +431,27 @@ def _pagina(jarvis):
     if len(mobiel) > 6:
         mobiel = mobiel[:4] + "****" + mobiel[-2:]
     tekst = tekst.replace("__MOBIEL__", html.escape(mobiel))
-    return tekst.replace("__LUISTER__", html.escape(cfg["JARVIS_LUISTER"]))
+    tekst = tekst.replace("__LUISTER__", html.escape(cfg["JARVIS_LUISTER"]))
+    tekst = tekst.replace("__NAV__", "")   # de tabbalk staat er al in deze pagina
+    tekst = tekst.replace("__LETOP__", _let_op_html(cfg))
+    return tekst
+
+
+def _let_op_html(cfg):
+    """Bovenaan de statuspagina zeggen wat er nog ingesteld moet worden."""
+    ontbreekt = []
+    if not cfg["TRUNK_NUMMER"] or not cfg["TRUNK_WACHTWOORD"]:
+        ontbreekt.append("het nummer en wachtwoord van je telefoonlijn")
+    if not cfg["MIJN_MOBIEL"]:
+        ontbreekt.append("het nummer dat Jarvis mag bellen")
+    if not cfg["JARVIS_BREIN_SLEUTEL"] and "127.0.0.1" not in (cfg["JARVIS_BREIN_URL"] or ""):
+        ontbreekt.append("de sleutel van je brein (Hermes)")
+    if not ontbreekt:
+        return ""
+    lijst = ", ".join(ontbreekt)
+    return ('<div class="let"><b>Nog niet ingericht.</b> Vul nog in: %s. '
+            'Dat doe je op de pagina <a href="/instellingen">Instellingen</a>; '
+            'opnieuw installeren is niet nodig.</div>' % html.escape(lijst))
 
 
 def maak_handler(jarvis):
@@ -284,6 +509,8 @@ def maak_handler(jarvis):
             if pad == "/api/status":
                 uitgebreid = "uitgebreid=1" in self.path
                 return self._json(200, jarvis.status(uitgebreid=uitgebreid))
+            if pad == "/instellingen":
+                return self._stuur(200, _instellingen_pagina(jarvis), "text/html; charset=utf-8")
             return self._json(404, {"fout": "onbekende route"})
 
         def do_POST(self):
@@ -299,6 +526,9 @@ def maak_handler(jarvis):
                     tekst, reden=gegevens.get("reden", ""), nummer=gegevens.get("nummer", "")))
             if pad == "/api/bel":
                 return self._json(200, jarvis.bel_gesprek(gegevens.get("nummer", "")))
+            if pad == "/api/instellingen":
+                return self._json(200, jarvis.instellingen_opslaan(
+                    gegevens.get("velden") or {}, gegevens.get("waken")))
             return self._json(404, {"fout": "onbekende route"})
 
     return Handler

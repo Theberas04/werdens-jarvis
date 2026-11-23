@@ -8,8 +8,9 @@ Je hebt al een account (voor sms). In het portaal
 - Een trunk is gratis: geen abonnement, geen aansluitkosten, per seconde
   afgerekend. NL vast circa €0,0238/min, NL mobiel circa €0,0500/min.
 - Je krijgt een **gebruikersnaam** (= je telefoonnummer in internationaal
-  formaat, bijvoorbeeld `31612345678`) en een **wachtwoord**. Die twee gaan in
-  `TRUNK_NUMMER` en `TRUNK_WACHTWOORD` in `/etc/jarvis/jarvis.env`.
+  formaat, bijvoorbeeld `31612345678`) en een **wachtwoord**. Die twee vul je in
+  op `http://<ip>:8099/instellingen` (of in `/etc/jarvis/jarvis.env`); na
+  opslaan laadt Asterisk de trunk meteen in.
 - Voor **inkomend** bellen koppel je een nummer aan de trunk. Heb je nog geen
   nummer, dan is Prepaid VoIP (± €8,95 per jaar, nummer inbegrepen) de
   goedkoopste route.

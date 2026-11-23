@@ -3,9 +3,13 @@
 ## Snelweg (Proxmox)
 
 ```bash
-TRUNK_NUMMER=... TRUNK_WACHTWOORD=... MIJN_MOBIEL=... BREIN_SLEUTEL=... \
 bash <(curl -fsSL https://raw.githubusercontent.com/Theberas04/werdens-jarvis/main/jarvis.sh)
 ```
+
+De installatie vraagt niets: je vult je nummer, wachtwoord en brein daarna in op
+`http://<ip>:8099/instellingen`. De variabelen hieronder hoef je alleen te
+gebruiken als je alles in één keer wilt meegeven of een tweede installatie
+scriptmatig doet.
 
 Opties die je als omgevingsvariabele kunt meegeven:
 
@@ -28,6 +32,17 @@ Draai je geen Proxmox: zet een Debian-LXC/VM neer en voer `guest-setup.sh` als
 root uit. Die verwacht `REPO_RAW` (waar de bestanden staan) en dezelfde
 variabelen.
 
+## Instellingen: pagina of bestand
+
+De pagina `/instellingen` schrijft naar `/etc/jarvis/jarvis.env`, maakt de
+Asterisk-bestanden opnieuw uit de sjablonen in `/opt/jarvis/asterisk/` en laat
+Asterisk de nieuwe trunk inlezen (`module reload res_pjsip.so`, `manager reload`,
+`dialplan reload`). De draaiende dienst leest de nieuwe waarden meteen; een
+herstart is alleen nodig als je met de hand in het bestand schrijft.
+
+Wat de pagina nooit doet: een wachtwoord of sleutel terugsturen. Een geheim veld
+leeg laten betekent "laat staan".
+
 ## Bijwerken
 
 Bestanden in de container verversen (code, config, systemd):
@@ -49,6 +64,7 @@ Of met de hand: haal `guest-setup.sh` opnieuw op en draai hem; hij bewaart je
 | `/opt/jarvis/modellen` | het Whisper-model |
 | `/etc/jarvis/jarvis.env` | alle instellingen |
 | `/etc/jarvis/waken.json` | wat de waakhond controleert |
+| `/opt/jarvis/asterisk/` | de sjablonen voor de Asterisk-configuratie |
 | `/etc/asterisk/*.conf` | trunk, dialplan, manager, RTP |
 | `/var/lib/asterisk/sounds/jarvis` | de wav-bestanden van meldingen |
 | `/var/log/jarvis/jarvis.log` | het gespreksjournaal |
@@ -104,6 +120,15 @@ Let op de snelheid: een klein model op CPU is bruikbaar voor losse vragen, maar
 een Hermes-turn met gereedschap duurt op zo'n model minuten — en dat hoor je aan
 de telefoon als lange stiltes. Voor gesprekken is een cloudmodel of Hermes de
 betere keuze.
+
+## Wat de waakhond controleert (op de pagina)
+
+Onderaan de instellingenpagina staat de inhoud van `waken.json` als tekst. Elke
+controle heeft minimaal een `naam` en een `url`; verder `code` (verwacht
+antwoord, standaard 200), `tijd` (timeout in seconden), `dringend` (negeert de
+stille uren), `meld_herstel` (bel ook als de dienst het weer doet) en `extra`
+(een zin die Jarvis erbij voorleest). Onzin wordt niet opgeslagen: de pagina
+weigert het en zegt wat er mis is.
 
 ## Spraak van een andere laag gebruiken
 

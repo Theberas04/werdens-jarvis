@@ -49,6 +49,7 @@ class Jarvis:
         self._start = time.time()
         self._laatste_melding = None
         self._melding_teller = 0
+        self._asterisk = None
 
     # ------------------------------------------------------------------ log
 
@@ -321,12 +322,62 @@ class Jarvis:
             "stem_modus": self.cfg["JARVIS_STEM"],
             "gesprekken": list(reversed(self.gesprekken[-10:])),
             "laatste_melding": self._laatste_melding,
+            "asterisk": self.asterisk_info(),
         }
         if uitgebreid:
             uit["stem"] = self._veilig(self.stem.gezondheid)
             uit["brein"]["proef"] = self.brein.gezondheid()
-            uit["asterisk"] = self._veilig(self.ami.gezondheid)
         return uit
+
+    def asterisk_info(self, max_leeftijd=5.0):
+        """Status van Asterisk en de trunk, met een korte cache.
+
+        De pagina vraagt dit elke paar seconden op; twee opdrachten naar
+        Asterisk per keer is zonde en traag.
+        """
+        nu = time.time()
+        if self._asterisk and nu - self._asterisk["tijd"] < max_leeftijd:
+            return self._asterisk["waarde"]
+        from . import instellingen
+        waarde = self._veilig(instellingen.asterisk_status)
+        self._asterisk = {"tijd": nu, "waarde": waarde}
+        return waarde
+
+    def instellingen_opslaan(self, velden, waken=None):
+        """Wat de instellingenpagina doet: opschrijven, toepassen, controleren."""
+        from . import instellingen
+        verslag = instellingen.verwerk(velden, log=self.log)
+        if not verslag.get("gelukt"):
+            return verslag
+
+        if waken is not None and str(waken).strip():
+            try:
+                instellingen.schrijf_waken(waken)
+                verslag.setdefault("gemeld", []).append("waakhond-controles opgeslagen")
+            except (ValueError, OSError) as fout:
+                return {"gelukt": False, "fouten": {"waken": str(fout)}}
+
+        # Nieuwe waarden meteen gebruiken; een herstart is niet nodig.
+        self.cfg.herlaad()
+        self.ami = AsteriskAMI(
+            self.cfg["AMI_HOST"], self.cfg.int("AMI_POORT"),
+            self.cfg["AMI_GEBRUIKER"], self.cfg["AMI_WACHTWOORD"], self.log,
+        )
+        self._asterisk = None
+        self.log("instellingen toegepast (trunk=%s, mobiel=%s, lijn %s)" % (
+            self.cfg["TRUNK_NUMMER"] or "-", _maskeer(self.cfg["MIJN_MOBIEL"]) or "-",
+            "compleet" if self.cfg.telefoon_ingericht() else "onvolledig"))
+
+        ast = self.asterisk_info(max_leeftijd=0)
+        verslag["trunk_ok"] = bool(ast.get("trunk_geregistreerd"))
+        verslag["trunk_detail"] = ast.get("detail", "")
+        verslag["ingericht"] = self.cfg.telefoon_ingericht()
+        try:
+            proef = self.brein.gezondheid()
+            verslag["proef"] = {"klaar": bool(proef.get("klaar")), "fout": proef.get("fout", "")}
+        except Exception as fout:
+            verslag["proef"] = {"klaar": False, "fout": str(fout)[:200]}
+        return verslag
 
     @staticmethod
     def _veilig(functie):

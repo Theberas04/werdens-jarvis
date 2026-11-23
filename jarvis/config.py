@@ -13,6 +13,24 @@ ENV_PADEN = [
 ]
 
 
+def _lees_alles(extra_uit_omgeving=None):
+    """De vaste paden, plus het bestand dat JARVIS_ENV_PAD aanwijst.
+
+    In de container is dat hetzelfde bestand; bij een test of een installatie
+    op een andere plek kan het een eigen bestand zijn. Wat daar staat gaat
+    voor, want dat is het bestand dat de instellingenpagina schrijft.
+    """
+    waarden = _lees(ENV_PADEN)
+    pad = (extra_uit_omgeving or {}).get("JARVIS_ENV_PAD") or waarden.get("JARVIS_ENV_PAD")
+    if pad:
+        eigen = Path(pad)
+        if eigen not in ENV_PADEN:
+            extra = _lees([eigen])
+            extra.pop("JARVIS_ENV_PAD", None)
+            waarden.update(extra)
+    return waarden
+
+
 def _lees(paden):
     waarden = {}
     for pad in paden:
@@ -76,13 +94,18 @@ class Config:
         "AMI_WACHTWOORD": "",
         # meldingen
         "JARVIS_MELDING_MAP": "/var/lib/jarvis/meldingen",
+        "JARVIS_ENV_PAD": "/etc/jarvis/jarvis.env",
+        "JARVIS_WAKEN_PAD": "/etc/jarvis/waken.json",
+        "JARVIS_TEMPLATE_MAP": "/opt/jarvis/asterisk",
+        "JARVIS_ASTERISK_MAP": "/etc/asterisk",
         "JARVIS_GEEN_BELLEN": "0",
         "JARVIS_LOG": "/var/log/jarvis/jarvis.log",
     }
 
     def __init__(self, overschrijf=None):
+        self._overschrijf = dict(overschrijf) if overschrijf else {}
         self._w = dict(self.STANDAARD)
-        self._w.update(_lees(ENV_PADEN))
+        self._w.update(_lees_alles({k: v for k, v in os.environ.items() if k in self.STANDAARD}))
         self._w.update({k: v for k, v in os.environ.items() if k in self.STANDAARD})
         if overschrijf:
             self._w.update(overschrijf)
@@ -120,3 +143,18 @@ class Config:
             k: ("" if any(v in k for v in verborgen) else v)
             for k, v in self._w.items()
         }
+
+    def herlaad(self):
+        """Lees /etc/jarvis/jarvis.env opnieuw (na het opslaan op de pagina).
+
+        De dienst hoeft daarvoor niet te herstarten: alles wat met de omgeving
+        te maken heeft (nummers, adressen, sleutels, drempels) wordt per gebruik
+        uit deze verzameling gelezen.
+        """
+        nieuw = dict(self.STANDAARD)
+        nieuw.update(_lees_alles({k: v for k, v in os.environ.items() if k in self.STANDAARD}))
+        nieuw.update({k: v for k, v in os.environ.items() if k in self.STANDAARD})
+        if self._overschrijf:
+            nieuw.update(self._overschrijf)
+        self._w = nieuw
+        return self.als_dict()
