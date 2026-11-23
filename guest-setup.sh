@@ -67,7 +67,7 @@ PY
 netwerk_uitleg() {
     if ! getent hosts archive.ubuntu.com >/dev/null 2>&1; then
         fout "geen DNS in de container. Zet een naamserver en probeer opnieuw:"
-        printf '         pct exec 140 -- sh -c "echo nameserver 1.1.1.1 > /etc/resolv.conf"\n'
+        printf '         pct exec %s -- sh -c "echo nameserver 1.1.1.1 > /etc/resolv.conf"\n' "${CTID:-<id>}"
     elif ! python3 -c "import socket;socket.create_connection(('archive.ubuntu.com',80),5)" >/dev/null 2>&1; then
         fout "wel DNS, geen verbinding met de pakketspiegel. Controleer de uitgaande route van de container."
     else
@@ -76,7 +76,7 @@ netwerk_uitleg() {
     if grep -qi "lock" "$APT_LOG" 2>/dev/null; then
         fout "een andere pakketbeheerder houdt de dpkg-lock vast (apt-daily of unattended-upgrades)."
         printf '         Wacht een minuut en probeer opnieuw:\n'
-        printf '         pct exec 140 -- pkill -f unattended-upgrades\n'
+        printf '         pct exec %s -- pkill -f unattended-upgrades\n' "${CTID:-<id>}"
     fi
     if grep -qi "no space" "$APT_LOG" 2>/dev/null; then
         fout "de schijf van de container is vol; geef hem meer ruimte en probeer opnieuw."
@@ -104,6 +104,7 @@ apt_rust() {
 
 stap "Systeem klaarzetten"
 export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=l NEEDRESTART_SUSPEND=1
 . /etc/os-release 2>/dev/null || true
 VERDIE=0
 if [ "${ID:-}" = "ubuntu" ]; then
@@ -169,6 +170,7 @@ if ! apt-cache policy asterisk 2>/dev/null | grep -q 'Candidate: [0-9]'; then
     exit 1
 fi
 
+zeg "  pakketten installeren: asterisk, asterisk-modules, ffmpeg (enkele minuten)"
 apt_rust
 if apt-get install -y -qq --no-install-recommends asterisk asterisk-modules asterisk-config \
         ffmpeg xz-utils iproute2 procps >>"$APT_LOG" 2>&1; then
@@ -226,6 +228,7 @@ if [ -x "$JARVIS/bin/whisper/whisper-server" ]; then
     ok "whisper-server staat er al"
 else
     TMP="$(mktemp -d)"
+    zeg "  whisper.cpp ophalen (ongeveer 30 MB)"
     if haal "https://github.com/ggml-org/whisper.cpp/releases/download/$WHISPER_TAG/whisper-bin-ubuntu-x64.tar.gz" \
         "$TMP/whisper.tar.gz" 300 \
         && mkdir -p "$JARVIS/bin/whisper" \
@@ -252,6 +255,7 @@ fi
 
 MODEL="$JARVIS/modellen/ggml-$STT_MODEL.bin"
 if [ ! -s "$MODEL" ]; then
+    zeg "  spraakmodel ggml-$STT_MODEL.bin ophalen (ongeveer 150 MB; dit duurt het langst)"
     if haal "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$STT_MODEL.bin" \
         "$MODEL" 600; then
         ok "model ggml-$STT_MODEL.bin ($(du -h "$MODEL" | cut -f1))"
@@ -267,6 +271,7 @@ fi
 stap "Spraak uit (piper $PIPER_TAG)"
 if [ ! -x "$JARVIS/bin/piper/piper" ]; then
     TMP="$(mktemp -d)"
+    zeg "  piper ophalen (ongeveer 20 MB)"
     if haal "https://github.com/rhasspy/piper/releases/download/$PIPER_TAG/piper_amd64.tar.gz" \
         "$TMP/piper.tar.gz" 300 \
         && mkdir -p "$JARVIS/bin/piper" \
@@ -288,6 +293,7 @@ fi
 STEM_ONNX="$JARVIS/modellen/nl_NL-rdh-medium.onnx"
 if [ ! -s "$STEM_ONNX" ]; then
     TMP="$(mktemp -d)"
+    zeg "  Nederlandse stem ophalen (ongeveer 65 MB)"
     if haal "$PIPER_STEM_URL" "$TMP/stem.tar.gz" 300 \
         && tar -xzf "$TMP/stem.tar.gz" -C "$TMP"; then
         ONNX="$(find "$TMP" -maxdepth 1 -name '*.onnx' | head -1)"

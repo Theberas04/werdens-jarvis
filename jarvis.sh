@@ -266,19 +266,25 @@ if ! pct push "$CTID" "$TMP/guest-setup.sh" /root/guest-setup.sh; then
 fi
 
 LOG="$TMP/guest.log"
-if ! pct exec "$CTID" -- env \
-        REPO="$REPO" BRANCH="$BRANCH" REPO_RAW="$RAW" \
+zeg "  De stappen komen hieronder langs. Reken op 5 tot 15 minuten:"
+zeg "  asterisk en ffmpeg installeren, daarna whisper.cpp, piper en de modellen."
+zeg ""
+# De uitvoer meteen doorsturen (tee) in plaats van pas aan het eind: anders lijkt
+# een installatie van tien minuten te hangen en weet je niet waar hij staat.
+pct exec "$CTID" -- env \
+        REPO="$REPO" BRANCH="$BRANCH" REPO_RAW="$RAW" CTID="$CTID" \
         TRUNK_NUMMER="$TRUNK_NUMMER" TRUNK_WACHTWOORD="$TRUNK_WACHTWOORD" \
         MIJN_MOBIEL="$MIJN_MOBIEL" CHEAPCONNECT_HOST="$CHEAPCONNECT_HOST" \
         BREIN_URL="$BREIN_URL" BREIN_SLEUTEL="$BREIN_SLEUTEL" BREIN_MODEL="$BREIN_MODEL" \
         STT_MODEL="$STT_MODEL" WEB_POORT="$WEB_POORT" \
-        bash /root/guest-setup.sh >"$LOG" 2>&1; then
+        bash /root/guest-setup.sh 2>&1 | tee "$LOG"
+GUEST_CODE="${PIPESTATUS[0]:-1}"
+if [ "$GUEST_CODE" -ne 0 ]; then
     fout "installatie in de container mislukte (laatste regels):"
     tail -n 30 "$LOG" | sed 's/^/     /'
     zeg "     Volledige log: pct exec $CTID -- journalctl -u jarvisd -n 50"
     exit 1
 fi
-sed 's/^/  /' "$LOG" | grep -E "ok |\[fout\]|ZELFTEST|TRUNK|KLAAR|letop" || true
 
 if ! grep -q "ZELFTEST OK" "$LOG"; then
     fout "de zelftest in de container is niet geslaagd (spraak of brein)"
