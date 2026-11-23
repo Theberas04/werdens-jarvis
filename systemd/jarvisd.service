@@ -1,0 +1,19 @@
+[Unit]
+Description=Jarvis: telefonische assistent
+After=network-online.target asterisk.service
+Wants=network-online.target
+Requires=asterisk.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/jarvis
+EnvironmentFile=-/etc/jarvis/jarvis.env
+ExecStart=/usr/bin/python3 -m jarvis.jarvisd
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Jarvis-waakhond elke minuut
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=60
+AccuracySec=5
+Unit=jarvis-wacht.service
+
+[Install]
+WantedBy=timers.target

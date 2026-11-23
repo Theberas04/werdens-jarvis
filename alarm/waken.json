@@ -1,0 +1,29 @@
+{
+  "rust_seconden": 1800,
+  "stil_van": "23:30",
+  "stil_tot": "07:00",
+  "controles": [
+    {
+      "naam": "Werdens Monitor",
+      "url": "http://192.168.1.100:8080/health",
+      "code": 200,
+      "tijd": 8,
+      "dringend": true
+    },
+    {
+      "naam": "VoorraadThuis",
+      "url": "http://192.168.1.100:8090/",
+      "code": 200,
+      "tijd": 8,
+      "meld_herstel": true
+    },
+    {
+      "naam": "Werdens Media LLM",
+      "url": "http://192.168.1.100:11434/health",
+      "code": 200,
+      "tijd": 8,
+      "dringend": true,
+      "extra": "De chat en de spraaklaag van je eigen model doen het dan niet."
+    }
+  ]
+}

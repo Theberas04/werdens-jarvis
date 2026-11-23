@@ -1,0 +1,11 @@
+[Unit]
+Description=Jarvis-waakhond: controleert diensten en laat Jarvis bellen
+After=network-online.target jarvisd.service
+Wants=jarvisd.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/jarvis
+EnvironmentFile=-/etc/jarvis/jarvis.env
+ExecStart=/usr/bin/python3 -m alarm.wacht
+Nice=5

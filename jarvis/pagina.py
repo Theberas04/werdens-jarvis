@@ -1,0 +1,312 @@
+"""Statuspagina en API van Jarvis.
+
+Huisstijl is die van Werdens Monitor: licht, blauw accent, kaarten met een
+dunne rand. Alles wat je hier ziet komt uit de echte status van de dienst; de
+knoppen doen echt iets (bellen via Asterisk).
+"""
+import base64
+import html
+import json
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+STIJL = """
+:root{
+  --bg:#f4f7fb; --pane:#fff; --pane2:#f8fafc; --pane3:#eef4fb;
+  --line:#e3eaf4; --txt:#0f172a; --txt2:#5a6b82;
+  --accent:#2ea3f2; --accent-d:#1e73be; --goed:#17a673; --fout:#d64545; --let:#c98a00;
+  --merk:linear-gradient(118deg,#5ff0e8 0%,#2ea3f2 55%,#1e73be 100%);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wikkel{max-width:1060px;margin:0 auto;padding:22px 18px 60px}
+header.kop{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+.merk{width:46px;height:46px;border-radius:13px;background:var(--merk);display:flex;align-items:center;justify-content:center;
+ color:#04202f;font-weight:800;font-size:19px;letter-spacing:.5px;box-shadow:0 6px 16px rgba(46,163,242,.28)}
+h1{font-size:21px;margin:0;letter-spacing:.2px}
+.tagline{color:var(--txt2);font-size:13px;margin-top:2px}
+.status{display:flex;gap:8px;align-items:center;margin-left:auto;font-size:13px;color:var(--txt2)}
+.stip{width:9px;height:9px;border-radius:50%;background:var(--goed);display:inline-block}
+.stip.fout{background:var(--fout)} .stip.let{background:var(--let)}
+.raster{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.kaart{background:var(--pane);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.kaart-kop{padding:13px 16px;border-bottom:1px solid var(--line);background:var(--pane2);
+ display:flex;align-items:center;gap:8px;font-weight:650;font-size:14px}
+.kaart-body{padding:15px 16px}
+.rij{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:14px}
+.rij:last-child{border-bottom:0}
+.rij b{font-weight:600}
+.zacht{color:var(--txt2)}
+.knop{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--pane);
+ color:var(--txt);padding:9px 14px;border-radius:10px;font:inherit;font-weight:600;cursor:pointer;text-decoration:none}
+.knop:hover{border-color:var(--accent)}
+.knop.primair{background:var(--accent);border-color:var(--accent);color:#fff}
+.knop.primair:hover{background:var(--accent-d);border-color:var(--accent-d)}
+.knop[disabled]{opacity:.55;cursor:not-allowed}
+textarea{width:100%;min-height:74px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+ font:inherit;color:var(--txt);background:var(--pane);resize:vertical}
+.knoppen{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+ul.gesprek{list-style:none;margin:0;padding:0}
+ul.gesprek li{border-bottom:1px dashed var(--line);padding:9px 0;font-size:14px}
+ul.gesprek li:last-child{border-bottom:0}
+.beurt{margin:3px 0;font-size:13.5px}
+.beurt .wie{font-weight:700;color:var(--accent-d)}
+.melding{margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--pane3);
+ border:1px solid var(--line);font-size:13.5px;white-space:pre-wrap}
+.melding.fout{background:#fdf1f1;border-color:#f3c9c9}
+.badge{font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--pane3);
+ border:1px solid var(--line);color:var(--txt2)}
+code{background:var(--pane3);border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:13px}
+p.uitleg{color:var(--txt2);font-size:13.5px;margin:8px 0 0}
+footer{color:var(--txt2);font-size:12.5px;margin-top:26px;text-align:center}
+@media (max-width:820px){
+  .raster{grid-template-columns:1fr}
+  .status{margin-left:0;width:100%}
+  .merk{width:40px;height:40px;font-size:17px}
+  h1{font-size:19px}
+}
+"""
+
+JS = """
+function q(s){return document.querySelector(s)}
+function esc(t){var d=document.createElement('div');d.textContent=t==null?'':t;return d.innerHTML}
+function toon(tekst,isFout){
+  var m=q('#melding'); m.className='melding'+(isFout?' fout':''); m.textContent=tekst; m.hidden=false;
+}
+function tijd(){
+  fetch('/api/status').then(function(r){return r.json()}).then(function(d){
+    q('#sinds').textContent = d.draait_sind + ' s';
+    q('#lijn').textContent = d.telefoon_ingericht ? 'ingericht' : 'niet ingericht';
+    q('#lijnstip').className = 'stip' + (d.telefoon_ingericht ? '' : ' let');
+    q('#model').textContent = d.brein.model;
+    q('#breinurl').textContent = d.brein.url;
+    var g = d.gesprekken || [];
+    var lijst = q('#gesprekken');
+    if(!g.length){ lijst.innerHTML = '<li class="zacht">Nog geen gesprekken.</li>'; }
+    else {
+      var uit = '';
+      for(var i=0;i<g.length;i++){
+        var x=g[i], kop = esc(x.begon||'') + ' &middot; ' + esc(String(x.duur||0)) + ' s &middot; ' + x.beurten.length + ' beurt(en)';
+        uit += '<li><div>' + kop + '</div>';
+        for(var j=0;j<x.beurten.length;j++){
+          var b=x.beurten[j];
+          uit += '<div class="beurt"><span class="wie">' + (b.rol==='tom'?'Tom':'Jarvis') + ':</span> ' + esc(b.tekst) + '</div>';
+        }
+        uit += '</li>';
+      }
+      lijst.innerHTML = uit;
+    }
+    var lm = d.laatste_melding;
+    q('#laatstemelding').textContent = lm ? (lm.tijd + ' - ' + lm.tekst) : 'nog geen melding verstuurd';
+  }).catch(function(e){
+    q('#sinds').textContent = '?'; q('#lijnstip').className='stip fout';
+    toon('De status is niet op te halen: ' + e, true);
+  });
+}
+function meldingSturen(){
+  var tekst = q('#meldingtekst').value.trim();
+  if(!tekst){ toon('Typ eerst een melding.', true); return; }
+  var knop = q('#belknop'); knop.disabled = true;
+  toon('Bezig met bellen...', false);
+  fetch('/api/melding', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({tekst:tekst})})
+    .then(function(r){return r.json()}).then(function(d){
+      knop.disabled = false;
+      if(d.gelukt){ toon('De telefoon gaat nu over bij Tom.' + (d.gesimuleerd?' (teststand: er is niet echt gebeld)':''), false); }
+      else { toon('Bellen mislukte: ' + (d.fout||'onbekende fout'), true); }
+      tijd();
+    }).catch(function(e){ knop.disabled=false; toon('Bellen mislukte: ' + e, true); });
+}
+function belGesprek(){
+  var knop = q('#gesprekknop'); knop.disabled = true;
+  toon('Bezig met bellen...', false);
+  fetch('/api/bel', {method:'POST'}).then(function(r){return r.json()}).then(function(d){
+    knop.disabled = false;
+    toon(d.gelukt ? 'Jarvis belt Tom nu voor een gesprek.' : ('Bellen mislukte: ' + (d.fout||'?')), !d.gelukt);
+  }).catch(function(e){ knop.disabled=false; toon('Bellen mislukte: ' + e, true); });
+}
+function proef(){
+  toon('Bezig met de proef: spraak uit, spraak in, brein en Asterisk...', false);
+  fetch('/api/status?uitgebreid=1').then(function(r){return r.json()}).then(function(d){
+    var regels = [];
+    regels.push('spraak uit: ' + (d.stem.tts.klaar ? 'ok (' + d.stem.tts.seconden + ' s)' : 'fout - ' + d.stem.tts.fout));
+    regels.push('spraak in: ' + (d.stem.stt.klaar ? 'ok, hoorde "' + d.stem.stt.tekst + '"' : 'fout - ' + d.stem.stt.fout));
+    regels.push('brein: ' + (d.brein.proef.klaar ? 'ok (' + d.brein.proef.seconden + ' s)' : 'fout - ' + d.brein.proef.fout));
+    regels.push('Asterisk: ' + (d.asterisk.klaar ? 'ok' : 'fout - ' + d.asterisk.fout));
+    toon(regels.join('\\n'), !(d.stem.tts.klaar && d.stem.stt.klaar && d.brein.proef.klaar));
+  }).catch(function(e){ toon('Proef mislukte: ' + e, true); });
+}
+document.addEventListener('DOMContentLoaded', function(){
+  tijd(); setInterval(tijd, 5000);
+  q('#belknop').addEventListener('click', meldingSturen);
+  q('#gesprekknop').addEventListener('click', belGesprek);
+  q('#proefknop').addEventListener('click', proef);
+});
+"""
+
+PAGINA = """<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis &middot; telefonische assistent</title>
+<style>__STIJL__</style>
+</head>
+<body>
+<div class="wikkel">
+  <header class="kop">
+    <div class="merk">J</div>
+    <div>
+      <h1>Jarvis</h1>
+      <div class="tagline">Je belt hem, hij belt jou als er iets mis is.</div>
+    </div>
+    <div class="status"><span class="stip" id="lijnstip"></span><span id="lijn">laden...</span>
+      <span class="badge">up <span id="sinds">?</span></span></div>
+  </header>
+
+  <div class="raster">
+    <div class="kaart">
+      <div class="kaart-kop">Telefoonlijn</div>
+      <div class="kaart-body">
+        <div class="rij"><span>Trunk-nummer</span><b>__TRUNK__</b></div>
+        <div class="rij"><span>Mijn mobiel</span><b>__MOBIEL__</b></div>
+        <div class="rij"><span>AudioSocket</span><b>__LUISTER__</b></div>
+        <div class="knoppen">
+          <button class="knop primair" id="gesprekknop">Bel mijn telefoon</button>
+          <button class="knop" id="proefknop">Doe de proef</button>
+        </div>
+        <p class="uitleg">Bellen gaat via je eigen Asterisk en de SIP-trunk van
+        CheapConnect. De knop vraagt Asterisk om een gesprek; de rest doet deze dienst.</p>
+      </div>
+    </div>
+
+    <div class="kaart">
+      <div class="kaart-kop">Melding inspreken</div>
+      <div class="kaart-body">
+        <textarea id="meldingtekst" placeholder="Bijvoorbeeld: de container van Werdens Monitor reageert niet meer."></textarea>
+        <div class="knoppen"><button class="knop primair" id="belknop">Laat Jarvis dit voorlezen</button></div>
+        <p class="uitleg">Jarvis leest de tekst voor. Druk je daarna op 1, dan ga je in gesprek met hem.</p>
+        <div class="rij" style="margin-top:12px"><span class="zacht">Laatste melding</span><span class="zacht" id="laatstemelding">-</span></div>
+      </div>
+    </div>
+
+    <div class="kaart">
+      <div class="kaart-kop">Brein</div>
+      <div class="kaart-body">
+        <div class="rij"><span>Model</span><b id="model">?</b></div>
+        <div class="rij"><span>Endpoint</span><b id="breinurl">?</b></div>
+        <p class="uitleg">Standaard is dit Hermes: die kan diensten nakijken, logboeken lezen en
+        een container herstarten. Elk OpenAI-compatible endpoint werkt.</p>
+      </div>
+    </div>
+
+    <div class="kaart">
+      <div class="kaart-kop">Laatste gesprekken</div>
+      <div class="kaart-body"><ul class="gesprek" id="gesprekken"></ul></div>
+    </div>
+  </div>
+
+  <div class="melding" id="melding" hidden></div>
+
+  <p class="uitleg">API: <code>POST /api/melding</code> met <code>{"tekst": "..."}</code>,
+  <code>POST /api/bel</code>, <code>GET /api/status</code>. De waakhond gebruikt dezelfde route.</p>
+  <footer>Jarvis &middot; eigen telefoonlijn in je eigen netwerk &middot; &copy; Werdens Media</footer>
+</div>
+<script>__JS__</script>
+</body>
+</html>"""
+
+
+def _pagina(jarvis):
+    cfg = jarvis.cfg
+    tekst = PAGINA.replace("__STIJL__", STIJL).replace("__JS__", JS)
+    tekst = tekst.replace("__TRUNK__", html.escape(cfg["TRUNK_NUMMER"] or "niet ingesteld"))
+    mobiel = cfg["MIJN_MOBIEL"] or "niet ingesteld"
+    if len(mobiel) > 6:
+        mobiel = mobiel[:4] + "****" + mobiel[-2:]
+    tekst = tekst.replace("__MOBIEL__", html.escape(mobiel))
+    return tekst.replace("__LUISTER__", html.escape(cfg["JARVIS_LUISTER"]))
+
+
+def maak_handler(jarvis):
+    cfg = jarvis.cfg
+    wachtwoord = (cfg.get("JARVIS_WEB_WACHTWOORD") or "").strip()
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "Jarvis/1.0"
+
+        def _mag(self):
+            if not wachtwoord:
+                return True
+            kop = self.headers.get("Authorization", "")
+            if not kop.startswith("Basic "):
+                return False
+            try:
+                _, _, gegeven = base64.b64decode(kop[6:]).decode("utf-8").partition(":")
+                return gegeven == wachtwoord
+            except Exception:
+                return False
+
+        def _stuur(self, code, lichaam, soort="application/json; charset=utf-8"):
+            gegevens = lichaam.encode("utf-8") if isinstance(lichaam, str) else lichaam
+            self.send_response(code)
+            self.send_header("Content-Type", soort)
+            self.send_header("Content-Length", str(len(gegevens)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                self.wfile.write(gegevens)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+        def _json(self, code, gegevens):
+            self._stuur(code, json.dumps(gegevens, ensure_ascii=False))
+
+        def _body(self):
+            try:
+                lengte = int(self.headers.get("Content-Length") or 0)
+                return json.loads(self.rfile.read(lengte) or b"{}")
+            except Exception:
+                return {}
+
+        def log_message(self, vorm, *args):
+            return
+
+        def do_GET(self):
+            pad = self.path.split("?")[0]
+            if pad == "/health":
+                return self._json(200, {"status": "ok", "versie": "1.0.0"})
+            if not self._mag():
+                return self._stuur(401, "inloggen nodig", "text/plain; charset=utf-8")
+            if pad in ("/", "/index.html"):
+                return self._stuur(200, _pagina(jarvis), "text/html; charset=utf-8")
+            if pad == "/api/status":
+                uitgebreid = "uitgebreid=1" in self.path
+                return self._json(200, jarvis.status(uitgebreid=uitgebreid))
+            return self._json(404, {"fout": "onbekende route"})
+
+        def do_POST(self):
+            if not self._mag():
+                return self._stuur(401, "inloggen nodig", "text/plain; charset=utf-8")
+            pad = self.path.split("?")[0]
+            gegevens = self._body()
+            if pad == "/api/melding":
+                tekst = (gegevens.get("tekst") or "").strip()
+                if not tekst:
+                    return self._json(400, {"gelukt": False, "fout": "geen tekst meegegeven"})
+                return self._json(200, jarvis.bel_melding(
+                    tekst, reden=gegevens.get("reden", ""), nummer=gegevens.get("nummer", "")))
+            if pad == "/api/bel":
+                return self._json(200, jarvis.bel_gesprek(gegevens.get("nummer", "")))
+            return self._json(404, {"fout": "onbekende route"})
+
+    return Handler
+
+
+def start_web(jarvis, host, poort):
+    server = ThreadingHTTPServer((host, poort), maak_handler(jarvis))
+    server.daemon_threads = True
+    draad = threading.Thread(target=server.serve_forever, name="web", daemon=True)
+    draad.start()
+    return server
