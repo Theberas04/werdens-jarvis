@@ -1,5 +1,16 @@
 # Installatie en beheer
 
+## Waarom Ubuntu 24.04 en geen Debian
+
+Debian heeft het pakket `asterisk` uit de distributie gehaald — het staat nog in
+`sid` en `experimental`, maar niet in bookworm en niet in trixie. Op Debian stopt
+`apt-get install asterisk` dus met "no installation candidate". Ubuntu 24.04
+levert asterisk 20.6 inclusief `app_audiosocket.so` (de AudioSocket die het
+gesprek naar jarvisd brengt), `chan_pjsip`, `res_pjsip_outbound_registration` en
+`res_rtp_asterisk`. Het installatiescript kiest daarom een
+`ubuntu-24.04-standard`-template en controleert na het installeren of die
+modules inderdaad op schijf staan.
+
 ## Snelweg (Proxmox)
 
 ```bash
@@ -28,7 +39,7 @@ Opties die je als omgevingsvariabele kunt meegeven:
 | `DEBIAN`, `BRIDGE`, `TEMPLATE_STORAGE`, `ROOTFS_STORAGE` | 13, vmbr0, local, local-lvm | Proxmox-keuzes |
 | `FETCH_ONLY=1` | 0 | alleen controleren of alle bestanden bestaan |
 
-Draai je geen Proxmox: zet een Debian-LXC/VM neer en voer `guest-setup.sh` als
+Draai je geen Proxmox: zet een Ubuntu 24.04 LXC/VM neer en voer `guest-setup.sh` als
 root uit. Die verwacht `REPO_RAW` (waar de bestanden staan) en dezelfde
 variabelen.
 

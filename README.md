@@ -42,8 +42,13 @@ Wil je het toch meteen meegeven (handig voor een tweede installatie), dan kan
 dat: `TRUNK_NUMMER=… TRUNK_WACHTWOORD=… MIJN_MOBIEL=… BREIN_SLEUTEL=…` vóór het
 commando.
 
-Draai je geen Proxmox maar een gewone Debian-machine, dan kun je
+Draai je geen Proxmox maar een gewone Ubuntu-machine, dan kun je
 `guest-setup.sh` direct als root uitvoeren.
+
+De container is **Ubuntu 24.04**, niet Debian: Debian heeft het pakket `asterisk`
+uit de distributie gehaald (het staat alleen nog in `sid`), en Asterisk is precies
+wat Jarvis nodig heeft. Ubuntu 24.04 levert asterisk 20.6 met `app_audiosocket`
+en `chan_pjsip` erin.
 
 ## Invullen op de pagina (geen herstart nodig)
 

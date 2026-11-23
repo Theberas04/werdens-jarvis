@@ -33,6 +33,7 @@ JARVIS=/opt/jarvis
 FOUTEN=0
 APT_LOG=/tmp/jarvis-apt.log
 ok()   { printf '  ok    %s\n' "$*"; }
+zeg()  { printf '%s\n' "$*"; }
 waarschuwing() { printf '  letop %s\n' "$*"; }
 fout() { printf '  [fout] %s\n' "$*"; FOUTEN=$((FOUTEN + 1)); }
 stap() { printf '\n== %s\n' "$*"; }
@@ -64,13 +65,13 @@ PY
 }
 
 netwerk_uitleg() {
-    if ! getent hosts deb.debian.org >/dev/null 2>&1; then
+    if ! getent hosts archive.ubuntu.com >/dev/null 2>&1; then
         fout "geen DNS in de container. Zet een naamserver en probeer opnieuw:"
         printf '         pct exec 140 -- sh -c "echo nameserver 1.1.1.1 > /etc/resolv.conf"\n'
-    elif ! python3 -c "import socket;socket.create_connection(('deb.debian.org',80),5)" >/dev/null 2>&1; then
-        fout "wel DNS, geen verbinding met de Debian-spiegel. Controleer de uitgaande route van de container."
+    elif ! python3 -c "import socket;socket.create_connection(('archive.ubuntu.com',80),5)" >/dev/null 2>&1; then
+        fout "wel DNS, geen verbinding met de pakketspiegel. Controleer de uitgaande route van de container."
     else
-        waarschuwing "de spiegel is bereikbaar; de fout zit in apt zelf (zie de regels hierboven)"
+        waarschuwing "de spiegel is bereikbaar; de fout zit in apt zelf"
     fi
     if grep -qi "lock" "$APT_LOG" 2>/dev/null; then
         fout "een andere pakketbeheerder houdt de dpkg-lock vast (apt-daily of unattended-upgrades)."
@@ -103,8 +104,27 @@ apt_rust() {
 
 stap "Systeem klaarzetten"
 export DEBIAN_FRONTEND=noninteractive
+. /etc/os-release 2>/dev/null || true
+VERDIE=0
+if [ "${ID:-}" = "ubuntu" ]; then
+    # asterisk en ffmpeg zitten in Ubuntu's universe; zonder die component
+    # meldt apt "no installation candidate" voor beide.
+    if ! grep -rqi 'universe' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null; then
+        waarschuwing "universe ontbreekt in de pakketbronnen; ik zet het erbij"
+        if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sed -i 's/^Components: \(.*\)/Components: \1 universe/' /etc/apt/sources.list.d/ubuntu.sources
+        elif [ -f /etc/apt/sources.list ]; then
+            sed -i 's/^\(deb[[:space:]].*\)$/\1 universe/' /etc/apt/sources.list
+        fi
+        grep -rqi 'universe' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null \
+            || fout "kon universe niet toevoegen aan de pakketbronnen"
+    fi
+    ok "pakketbronnen: ${PRETTY_NAME:-Ubuntu}"
+elif [ "${ID:-}" = "debian" ]; then
+    waarschuwing "Debian ${VERSION_ID:-?}: het pakket asterisk is uit Debian gehaald (alleen nog in sid)"
+fi
 
-if ! getent hosts deb.debian.org >/dev/null 2>&1; then
+if ! getent hosts archive.ubuntu.com >/dev/null 2>&1; then
     waarschuwing "geen naamserver in de container; apt heeft misschien geen verbinding"
     echo "nameserver 1.1.1.1" > /etc/resolv.conf 2>/dev/null || true
 fi
@@ -137,7 +157,21 @@ else
 fi
 
 apt_rust
-if apt-get install -y -qq --no-install-recommends asterisk ffmpeg xz-utils iproute2 procps >>"$APT_LOG" 2>&1; then
+# Eerst kijken of asterisk hier überhaupt bestaat. Debian heeft het pakket uit
+# de distributie gehaald; dan is doorgaan zinloos en wil je meteen weten waarom.
+if ! apt-cache policy asterisk 2>/dev/null | grep -q 'Candidate: [0-9]'; then
+    fout "het pakket asterisk bestaat niet in deze distributie (${PRETTY_NAME:-onbekend})"
+    apt-cache policy asterisk 2>/dev/null | sed -n '1,4p' | sed 's/^/         /'
+    zeg  "     Debian heeft asterisk uit de distributie gehaald (het staat alleen nog in sid)."
+    zeg  "     Maak de container opnieuw met Ubuntu 24.04:"
+    zeg  "       pct destroy <id>   en daarna de one-liner opnieuw"
+    echo "GEEN-ASTERISK-PAKKET"
+    exit 1
+fi
+
+apt_rust
+if apt-get install -y -qq --no-install-recommends asterisk asterisk-modules asterisk-config \
+        ffmpeg xz-utils iproute2 procps >>"$APT_LOG" 2>&1; then
     ok "asterisk, ffmpeg en hulpmiddelen geinstalleerd"
 else
     fout "kon asterisk/ffmpeg niet installeren; laatste regels:"
@@ -153,6 +187,17 @@ if ! command -v asterisk >/dev/null 2>&1 || ! command -v ffmpeg >/dev/null 2>&1;
     fout "gestopt: asterisk en ffmpeg zijn nodig en konden niet geinstalleerd worden."
     echo "APT-MISLUKT"
     exit 1
+fi
+
+# De modules zitten per distributie in een andere map (Ubuntu: multiarch), dus
+# zoeken in plaats van aannemen.
+PJSIP="$(find /usr/lib /usr/lib64 -name 'chan_pjsip.so' -print -quit 2>/dev/null)"
+MODULE_MAP=""
+[ -n "$PJSIP" ] && MODULE_MAP="$(dirname "$PJSIP")"
+if [ -n "$MODULE_MAP" ] && [ -f "$MODULE_MAP/app_audiosocket.so" ]; then
+    ok "AudioSocket en pjsip aanwezig in $MODULE_MAP"
+else
+    fout "AudioSocket-module (app_audiosocket.so) niet gevonden; pjsip-map: ${MODULE_MAP:-onbekend}"
 fi
 
 mkdir -p "$JARVIS" /opt/jarvis/jarvis /opt/jarvis/alarm /opt/jarvis/bin /opt/jarvis/modellen \

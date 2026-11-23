@@ -19,9 +19,9 @@
 #   BREIN_MODEL=hermes-agent      modelnaam
 #   STT_MODEL=base                base (snel) of small (nauwkeuriger)
 #   CTID=140 CTNAME=jarvis
-#   CORES=4 RAM=2048 DISK=8       whisper op 4 cores is ongeveer 0,3x realtime
+#   CORES=4 RAM=2048 DISK=10      whisper op 4 cores is ongeveer 0,3x realtime
 #   WEB_POORT=8099
-#   DEBIAN=13 BRIDGE=vmbr0 TEMPLATE_STORAGE=local ROOTFS_STORAGE=local-lvm
+#   UBUNTU=24.04 BRIDGE=vmbr0 TEMPLATE_STORAGE=local ROOTFS_STORAGE=local-lvm
 #   FETCH_ONLY=1                  alleen controleren of alle bestanden bestaan
 #
 set -uo pipefail
@@ -34,9 +34,8 @@ CTID="${CTID:-}"
 CTNAME="${CTNAME:-jarvis}"
 CORES="${CORES:-4}"
 RAM="${RAM:-2048}"
-DISK="${DISK:-8}"
+DISK="${DISK:-10}"
 WEB_POORT="${WEB_POORT:-8099}"
-DEBIAN="${DEBIAN:-13}"
 BRIDGE="${BRIDGE:-vmbr0}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 ROOTFS_STORAGE="${ROOTFS_STORAGE:-local-lvm}"
@@ -76,7 +75,7 @@ ok "root"
 
 if [ ! -d "$PVE_ETC" ]; then
     fout "geen $PVE_ETC — dit lijkt geen Proxmox-host."
-    zeg  "     Op een gewone Debian-machine kun je guest-setup.sh direct draaien; zie de README."
+    zeg  "     Op een gewone Ubuntu-machine kun je guest-setup.sh direct draaien; zie de README."
     exit 1
 fi
 ok "Proxmox ($PVE_ETC aanwezig)"
@@ -130,20 +129,33 @@ if [ "$FETCH_ONLY" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------- template
+#
+# Ubuntu 24.04 en niet Debian. Debian heeft het pakket asterisk uit de
+# distributie gehaald — het staat alleen nog in sid en experimental, niet in
+# bookworm en niet in trixie — terwijl Asterisk juist de kern van Jarvis is
+# (SIP-trunk, AudioSocket, AMI). Ubuntu 24.04 levert asterisk 20.6 met
+# app_audiosocket.so en chan_pjsip.so erin; daar is alles wat we gebruiken
+# aanwezig. Met een Debian-container stopt de installatie daarom meteen met
+# "Package 'asterisk' has no installation candidate".
 
-stap "Debian-template"
+stap "Ubuntu-template"
+
+UBUNTU="${UBUNTU:-24.04}"
 
 TEMPLATE="$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | awk '{print $1}' \
-    | grep -E "^${TEMPLATE_STORAGE}:vztmpl/debian-${DEBIAN}-standard_.*_amd64\.tar\.(zst|gz)$" \
+    | grep -E "^${TEMPLATE_STORAGE}:vztmpl/ubuntu-${UBUNTU}-standard_.*_amd64\.tar\.(zst|gz)$" \
     | sort | tail -1)"
 
 if [ -z "$TEMPLATE" ]; then
-    zeg "  geen debian-${DEBIAN}-template in $TEMPLATE_STORAGE; nu ophalen"
+    zeg "  geen ubuntu-${UBUNTU}-template in $TEMPLATE_STORAGE; nu ophalen"
     pveam update >/dev/null 2>&1 || let_op "pveam update gaf een fout, toch verder"
     NAAM="$(pveam available --section system 2>/dev/null | awk '{print $2}' \
-        | grep -E "^debian-${DEBIAN}-standard_.*_amd64\.tar\.(zst|gz)$" | sort | tail -1)"
+        | grep -E "^ubuntu-${UBUNTU}-standard_.*_amd64\.tar\.(zst|gz)$" | sort | tail -1)"
     if [ -z "$NAAM" ]; then
-        fout "geen debian-${DEBIAN}-template beschikbaar via pveam"
+        fout "geen ubuntu-${UBUNTU}-template beschikbaar via pveam"
+        zeg  "     Bekijk wat je host aanbiedt:"
+        pveam available --section system 2>/dev/null | grep -E "ubuntu-" | sed 's/^/       /'
+        zeg  "     Of gebruik een andere opslag voor templates: TEMPLATE_STORAGE=local"
         exit 1
     fi
     if pveam download "$TEMPLATE_STORAGE" "$NAAM" >/dev/null 2>&1; then
@@ -231,10 +243,10 @@ ok "IP-adres $IP"
 # Vooraf controleren of de container internet heeft. Zonder dat mislukt de
 # hele installatie (apt, GitHub, Hugging Face) en zoekt de gebruiker in de
 # verkeerde hoek.
-if pct exec "$CTID" -- bash -c 'exec 3<>/dev/tcp/deb.debian.org/80' >/dev/null 2>&1; then
+if pct exec "$CTID" -- bash -c 'exec 3<>/dev/tcp/archive.ubuntu.com/80' >/dev/null 2>&1; then
     ok "internet vanuit de container werkt"
 else
-    fout "de container kan deb.debian.org niet bereiken"
+    fout "de container kan archive.ubuntu.com niet bereiken"
     zeg "     DNS in de container:"
     pct exec "$CTID" -- sh -c 'cat /etc/resolv.conf 2>/dev/null | sed "s/^/       /"'
     zeg "     Controleer op de host het uitgaande verkeer van $CTID, of probeer:"
