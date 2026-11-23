@@ -299,6 +299,7 @@ function bewaar(){
       if(d.trunk_ok){ uit.push('De trunk is geregistreerd bij CheapConnect.'); }
       else { uit.push('De trunk is nog niet geregistreerd: controleer nummer en wachtwoord hierboven.'+(d.trunk_detail?(' ('+d.trunk_detail+')'):'')); }
       if(d.proef){ if(d.proef.klaar){ uit.push('Proef: spraak en brein doen het.'); } else { uit.push('Proef mislukte: '+(d.proef.fout||'onbekend')); } }
+      if(d.herstart_nodig){ uit.push('Voor het nieuwe spraakmodel is een herstart nodig: systemctl restart jarvisd in de container.'); }
       toon(uit,!d.trunk_ok);
       laadStatus();
     }).catch(function(e){ knop.disabled=false; toon(['Opslaan mislukte: '+e],true); });
