@@ -316,11 +316,14 @@ fi
 # ------------------------------------------------------- instellingen
 
 stap "Instellingen (/etc/jarvis/jarvis.env)"
-AMI_SECRET="${AMI_SECRET:-$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')}"
 if [ -f /etc/jarvis/jarvis.env ]; then
     cp /etc/jarvis/jarvis.env "/etc/jarvis/jarvis.env.bak-$(date +%Y%m%d-%H%M%S)"
-    ok "oude instellingen bewaard"
-fi
+    # Bij een herinstallatie blijven de bestaande waarden staan. Wat je op de
+    # instellingenpagina hebt ingevuld mag niet verdwijnen omdat de installatie
+    # opnieuw loopt.
+    ok "bestaande instellingen blijven staan (er is een .bak-bestand gemaakt)"
+else
+AMI_SECRET="${AMI_SECRET:-$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')}"
 cat > /etc/jarvis/jarvis.env <<EOF
 # Jarvis — instellingen. Aanpassen met: nano /etc/jarvis/jarvis.env
 # Daarna: systemctl restart jarvisd
@@ -369,8 +372,9 @@ AMI_POORT=5038
 AMI_GEBRUIKER=jarvis
 AMI_WACHTWOORD=$AMI_SECRET
 EOF
+fi
 chmod 640 /etc/jarvis/jarvis.env
-ok "instellingen geschreven"
+ok "instellingen in orde"
 
 # --------------------------------------------------------- asterisk-config
 
