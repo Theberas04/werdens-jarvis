@@ -54,6 +54,30 @@ herstart is alleen nodig als je met de hand in het bestand schrijft.
 Wat de pagina nooit doet: een wachtwoord of sleutel terugsturen. Een geheim veld
 leeg laten betekent "laat staan".
 
+## Het brein op een andere Hermes zetten (vanaf de Proxmox-host)
+
+Draait er al een Hermes in een andere container (bijvoorbeeld de ICT-AI), dan
+hoef je de sleutel niet over te typen. Dit script leest `API_SERVER_KEY` uit de
+`.env` van die container en zet de drie brein-regels in `/etc/jarvis/jarvis.env`
+van Jarvis, met een back-up en een proefaanroep na de herstart:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Theberas04/werdens-jarvis/main/tools/zet-brein-140.sh | bash
+```
+
+Standaard: Jarvis in container `140`, brein `http://192.168.1.248:8642/v1`,
+model `hermes-agent`. Anders geef je het mee:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Theberas04/werdens-jarvis/main/tools/zet-brein-140.sh | bash -s -- 140 http://192.168.1.248:8642/v1
+```
+
+De laatste regel van de uitvoer is de proefaanroep: **HTTP 200** betekent dat de
+sleutel klopt en de dienst ermee draait, **401** betekent dat de sleutel in de
+`.env` van de Hermes-container niet de sleutel is die zijn gateway gebruikt.
+Terugdraaien: het `.bak-`bestand naast `/etc/jarvis/jarvis.env` terugzetten en
+`systemctl restart jarvisd jarvis-wacht`.
+
 ## Bijwerken
 
 Bestanden in de container verversen (code, config, systemd):
