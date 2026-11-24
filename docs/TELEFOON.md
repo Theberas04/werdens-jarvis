@@ -84,9 +84,12 @@ external_signaling_address = jouw.publieke.ip
   `/var/log/asterisk/full`**: de server krijgt je inloggegevens en wijst ze af.
   Gebruikersnaam is je nummer in internationaal formaat zonder `+`
   (`31463690256`); het wachtwoord is dat van de **trunk** in het portaal — niet
-  je portaal-wachtwoord en niet de sms-API-sleutel. Twee dingen die CheapConnect
-  zelf noemt: hun FAQ gebruikt `voip.cheapconnect.net` als SIP-server (de
-  trunk-handleiding `sip.cheapconnect.net`), en de naam `asterisk` is op hun
+  je portaal-wachtwoord en niet de sms-API-sleutel. Over de server zijn hun
+  documenten zelf tegenstrijdig — hun FAQ noemt `voip.cheapconnect.net`, de
+  trunk-handleiding `sip.cheapconnect.net` — maar in de praktijk registreerde
+  de trunk alleen op **`voip.cheapconnect.net`**; met `sip.…` kwam dezelfde
+  `Rejected` terug. Daarom is `voip.cheapconnect.net` de standaardwaarde
+  geworden. En de naam `asterisk` is op hun
   platform gereserveerd — daarom zet `asterisk/pjsip.conf` een eigen
   `user_agent=JarvisPBX`. Let op: die hoort in de sectie `[global]`. Zet je hem
   in `[transport-udp]`, dan is het geen geldige optie, laadt de transport niet

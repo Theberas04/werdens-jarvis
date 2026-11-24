@@ -49,7 +49,7 @@ BREIN_URL="${BREIN_URL:-}"
 BREIN_SLEUTEL="${BREIN_SLEUTEL:-}"
 BREIN_MODEL="${BREIN_MODEL:-hermes-agent}"
 STT_MODEL="${STT_MODEL:-base}"
-CHEAPCONNECT_HOST="${CHEAPCONNECT_HOST:-sip.cheapconnect.net}"
+CHEAPCONNECT_HOST="${CHEAPCONNECT_HOST:-voip.cheapconnect.net}"
 
 BESTANDEN="guest-setup.sh jarvis.sh jarvis/__init__.py jarvis/config.py jarvis/stem.py jarvis/telefoon.py jarvis/brein.py jarvis/pagina.py jarvis/jarvisd.py jarvis/instellingen.py alarm/__init__.py alarm/wacht.py alarm/waken.json asterisk/pjsip.conf asterisk/extensions.conf asterisk/manager.conf asterisk/rtp.conf asterisk/modules.conf asterisk/logger.conf systemd/jarvisd.service systemd/jarvis-wacht.service systemd/jarvis-wacht.timer tools/__init__.py tools/proefgesprek.py deploy/update-from-github.sh"
 

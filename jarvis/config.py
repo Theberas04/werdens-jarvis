@@ -84,7 +84,7 @@ class Config:
         # telefonie
         "TRUNK_NUMMER": "",
         "TRUNK_WACHTWOORD": "",
-        "CHEAPCONNECT_HOST": "sip.cheapconnect.net",
+        "CHEAPCONNECT_HOST": "voip.cheapconnect.net",
         "MIJN_MOBIEL": "",
         "JARVIS_KIESTIJD": "45",
         # Asterisk Manager Interface (zelf bellen)

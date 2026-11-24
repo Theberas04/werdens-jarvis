@@ -51,7 +51,7 @@ VELDEN = [
     ("TRUNK_WACHTWOORD", "Trunk-wachtwoord", "lijn", "geheim",
      "Het wachtwoord uit je CheapConnect-portaal"),
     ("CHEAPCONNECT_HOST", "CheapConnect-server", "lijn", "tekst",
-     "Laat staan op sip.cheapconnect.net"),
+     "De SIP-server van CheapConnect: voip.cheapconnect.net"),
     ("MIJN_MOBIEL", "Mijn mobiele nummer", "lijn", "tekst",
      "Het nummer dat Jarvis belt als er iets mis is: 31612345678"),
 
@@ -167,7 +167,7 @@ def schrijf_asterisk(waarden=None, template_map=None, doel_map=None):
     koppen = {
         "TRUNK_NUMMER": waarden.get("TRUNK_NUMMER", ""),
         "TRUNK_WACHTWOORD": waarden.get("TRUNK_WACHTWOORD", ""),
-        "CHEAPCONNECT_HOST": waarden.get("CHEAPCONNECT_HOST") or "sip.cheapconnect.net",
+        "CHEAPCONNECT_HOST": waarden.get("CHEAPCONNECT_HOST") or "voip.cheapconnect.net",
         "AMI_SECRET": waarden.get("AMI_WACHTWOORD", ""),
         "SOCKET": waarden.get("JARVIS_LUISTER") or "127.0.0.1:9092",
     }
