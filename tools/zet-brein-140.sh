@@ -21,6 +21,11 @@ HERMES_ENV=/home/hermes/.hermes/.env
 command -v pct >/dev/null || { echo "FOUT: pct niet gevonden — dit is geen Proxmox-host."; exit 1; }
 
 HIER=$(hostname -s)
+# accept-new: de host key van de andere node wordt de eerste keer aangenomen.
+# Zonder dit stopt ssh met "Host key verification failed" als die node daar nog
+# niet in known_hosts staat (bijvoorbeeld omdat de clusternaam met een
+# hoofdletter anders is dan de naam in known_hosts).
+SSH_OPTS="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 
 # Alle nodes van het cluster, de eigen node eerst. Let op: nodes mogen van
 # elkaar verschillen in alleen hoofdletters (Proxmox naast proxmox), dus
@@ -42,7 +47,7 @@ in_ct() {
   if is_lokaal "$node"; then
     pct exec "$vmid" -- "$@"
   else
-    ssh -o BatchMode=yes -o ConnectTimeout=10 "$node" pct exec "$vmid" -- "$@"
+    ssh $SSH_OPTS "$node" pct exec "$vmid" -- "$@"
   fi
 }
 
@@ -52,14 +57,14 @@ naar_ct() {
   if is_lokaal "$node"; then
     pct exec "$vmid" -- sh -c "cat > $doel" < "$bron"
   else
-    ssh -o BatchMode=yes -o ConnectTimeout=10 "$node" pct exec "$vmid" -- sh -c "cat > $doel" < "$bron"
+    ssh $SSH_OPTS "$node" pct exec "$vmid" -- sh -c "cat > $doel" < "$bron"
   fi
 }
 
 # Draaiende containers van een node opvragen; fouten laten we zien.
 lijst_ct() {
   local node="$1"
-  if is_lokaal "$node"; then pct list; else ssh -o BatchMode=yes -o ConnectTimeout=10 "$node" pct list; fi
+  if is_lokaal "$node"; then pct list; else ssh $SSH_OPTS "$node" pct list; fi
 }
 
 echo "== 1. waar staat de Hermes-container? =="
