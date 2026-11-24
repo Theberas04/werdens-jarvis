@@ -202,7 +202,7 @@ else
     fout "AudioSocket-module (app_audiosocket.so) niet gevonden; pjsip-map: ${MODULE_MAP:-onbekend}"
 fi
 
-mkdir -p "$JARVIS" /opt/jarvis/jarvis /opt/jarvis/alarm /opt/jarvis/bin /opt/jarvis/modellen \
+mkdir -p "$JARVIS" /opt/jarvis/jarvis /opt/jarvis/alarm /opt/jarvis/tools /opt/jarvis/bin /opt/jarvis/modellen \
          /etc/jarvis /var/lib/jarvis /var/log/jarvis /var/lib/asterisk/sounds/jarvis
 chmod 750 /etc/jarvis
 
@@ -212,6 +212,9 @@ stap "Programma ophalen"
 CODE="jarvis/__init__.py jarvis/config.py jarvis/stem.py jarvis/telefoon.py jarvis/brein.py jarvis/pagina.py jarvis/jarvisd.py jarvis/instellingen.py alarm/__init__.py alarm/wacht.py tools/__init__.py tools/proefgesprek.py"
 CODE_FOUTEN=0
 for bestand in $CODE; do
+    # De map van het doelbestand aanmaken: zo werkt een nieuw bestand in een
+    # nieuwe submap ook als de lijst hierboven vergeten is.
+    mkdir -p "$(dirname "$JARVIS/$bestand")"
     if haal "$RAW/$bestand" "$JARVIS/$bestand" 60; then
         ok "$bestand"
     else
@@ -219,7 +222,20 @@ for bestand in $CODE; do
         CODE_FOUTEN=$((CODE_FOUTEN + 1))
     fi
 done
-[ "$CODE_FOUTEN" -eq 0 ] || { echo "Zonder code gaat het niet verder."; netwerk_uitleg; exit 1; }
+if [ "$CODE_FOUTEN" -ne 0 ]; then
+    if ! getent hosts raw.githubusercontent.com >/dev/null 2>&1; then
+        fout "geen verbinding met raw.githubusercontent.com (DNS of route naar buiten)"
+        fout "controleer: pct exec ${CTID:-<id>} -- getent hosts raw.githubusercontent.com"
+    elif touch "$JARVIS/.schrijfproef" 2>/dev/null; then
+        rm -f "$JARVIS/.schrijfproef"
+        fout "wel verbinding en $JARVIS is beschrijfbaar; staan de bestanden wel op $RAW?"
+    else
+        fout "kan niet schrijven in $JARVIS (ruimte of rechten)"
+        df -h "$JARVIS" 2>/dev/null | sed 's/^/         /'
+    fi
+    echo "Zonder code gaat het niet verder."
+    exit 1
+fi
 
 # --------------------------------------------------------------- whisper
 
