@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # JARVIS-GUEST-SETUP
+# JARVIS-GUEST-VERSIE=1
 #
 # Zet Jarvis neer in deze container: Asterisk met een SIP-trunk, whisper.cpp,
 # piper en de dienst jarvisd. Wordt gestart door jarvis.sh op de Proxmox-host.

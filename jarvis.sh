@@ -93,10 +93,30 @@ trap 'rm -rf "$TMP"' EXIT
 
 stap "Installatiebestanden ophalen"
 
+# guest-setup.sh moet de nieuwste versie zijn. raw.githubusercontent.com is een
+# CDN met Cache-Control: max-age=300, dus een verse push kan daar tot vijf
+# minuten oud blijven — en dan installeert de container een oude versie zonder
+# dat iemand dat ziet. De API en jsDelivr zijn wel vers; raw is de terugval.
+GUEST_VERSIE_MIN="${GUEST_VERSIE_MIN:-1}"
+haal_vers() {
+    haal_pad="$1"; haal_doel="$2"
+    if curl -fsSL --max-time 60 -H 'Accept: application/vnd.github.raw' \
+            -o "$haal_doel" "https://api.github.com/repos/$REPO/contents/$haal_pad?ref=$BRANCH" 2>/dev/null \
+            && [ -s "$haal_doel" ]; then
+        return 0
+    fi
+    if curl -fsSL --max-time 60 -o "$haal_doel" \
+            "https://cdn.jsdelivr.net/gh/$REPO@$BRANCH/$haal_pad" 2>/dev/null \
+            && [ -s "$haal_doel" ]; then
+        return 0
+    fi
+    curl -fsSL --max-time 60 -o "$haal_doel" "$RAW/$haal_pad"
+}
+
 if [ -n "$HIER" ] && [ -f "$HIER/guest-setup.sh" ]; then
     cp "$HIER/guest-setup.sh" "$TMP/guest-setup.sh"
     ok "guest-setup.sh (uit deze map)"
-elif curl -fsSL --max-time 60 -o "$TMP/guest-setup.sh" "$RAW/guest-setup.sh"; then
+elif haal_vers "guest-setup.sh" "$TMP/guest-setup.sh"; then
     ok "guest-setup.sh opgehaald"
 else
     fout "kon guest-setup.sh niet ophalen van $RAW"
@@ -107,7 +127,21 @@ if [ ! -s "$TMP/guest-setup.sh" ] || ! grep -q "JARVIS-GUEST-SETUP" "$TMP/guest-
     fout "guest-setup.sh is leeg of onvolledig (marker ontbreekt)"
     exit 1
 fi
-ok "$(wc -c <"$TMP/guest-setup.sh") bytes, marker gevonden"
+GUEST_VERSIE="$(sed -n 's/^# JARVIS-GUEST-VERSIE=//p' "$TMP/guest-setup.sh" | head -1 | tr -d ' ')"
+case "$GUEST_VERSIE" in
+    ''|*[!0-9]*)
+        fout "deze guest-setup.sh heeft geen versiemarkering (${GUEST_VERSIE:-leeg}); dat is een oude kopie uit de cache van GitHub."
+        zeg  "     Wacht een halve minuut en draai de one-liner opnieuw; de cache van"
+        zeg  "     raw.githubusercontent.com is maximaal vijf minuten oud."
+        exit 1
+        ;;
+esac
+if [ "$GUEST_VERSIE" -lt "$GUEST_VERSIE_MIN" ]; then
+    fout "oude guest-setup.sh uit de cache van GitHub (versie $GUEST_VERSIE, nodig $GUEST_VERSIE_MIN)"
+    zeg  "     Wacht een halve minuut en draai de one-liner opnieuw."
+    exit 1
+fi
+ok "$(wc -c <"$TMP/guest-setup.sh") bytes, marker en versie $GUEST_VERSIE gevonden"
 
 ontbreekt=0
 for bestand in $BESTANDEN; do
