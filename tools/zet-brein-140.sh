@@ -21,20 +21,20 @@ HERMES_ENV=/home/hermes/.hermes/.env
 command -v pct >/dev/null || { echo "FOUT: pct niet gevonden — dit is geen Proxmox-host."; exit 1; }
 
 HIER=$(hostname -s)
-klein() { echo "$1" | tr 'A-Z' 'a-z'; }
 
-# Alle nodes van het cluster, de eigen node eerst. Namen kunnen in hoofdletters
-# staan terwijl de hostname dat niet doet; vergelijk dus zonder verschil.
+# Alle nodes van het cluster, de eigen node eerst. Let op: nodes mogen van
+# elkaar verschillen in alleen hoofdletters (Proxmox naast proxmox), dus
+# vergelijk exact — anders sla je een echte node over.
 NODES="$HIER"
 if [ -d /etc/pve/nodes ]; then
   for n in $(ls /etc/pve/nodes 2>/dev/null); do
-    [ "$(klein "$n")" = "$(klein "$HIER")" ] || NODES="$NODES $n"
+    [ "$n" = "$HIER" ] || NODES="$NODES $n"
   done
 fi
 echo "== 0. cluster =="
 echo "   deze host: $HIER | nodes: $NODES"
 
-is_lokaal() { [ "$(klein "$1")" = "$(klein "$HIER")" ]; }
+is_lokaal() { [ "$1" = "$HIER" ]; }
 
 # Commando in een container uitvoeren, waar die container ook staat.
 in_ct() {
@@ -70,6 +70,8 @@ for node in $NODES; do
   if [ $? -ne 0 ]; then
     echo "      kon de containerlijst van $node niet ophalen:"
     echo "$RUW" | sed 's/^/      /'
+    echo "      (ssh naar de andere node hoort in een cluster zonder wachtwoord te werken;"
+    echo "       lukt dat niet, draai dit script dan op node $node zelf)"
     continue
   fi
   echo "$RUW" | sed 's/^/      /'
