@@ -91,7 +91,11 @@ journalctl -u jarvisd -f        # meelezen tijdens een gesprek
 
 ## Handige commando's
 
+In de container, vanuit de map van de programmatuur:
+
 ```bash
+cd /opt/jarvis
+
 # Wie belt er, en wat zegt hij?
 python3 -m jarvis.jarvisd --zelftest
 

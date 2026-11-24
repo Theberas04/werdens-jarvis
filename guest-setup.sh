@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # JARVIS-GUEST-SETUP
-# JARVIS-GUEST-VERSIE=1
+# JARVIS-GUEST-VERSIE=2
 #
 # Zet Jarvis neer in deze container: Asterisk met een SIP-trunk, whisper.cpp,
 # piper en de dienst jarvisd. Wordt gestart door jarvis.sh op de Proxmox-host.
@@ -479,7 +479,9 @@ systemctl enable --now jarvis-wacht.timer >/dev/null 2>&1 && ok "waakhond-timer 
 # --------------------------------------------------------------- zelftest
 
 stap "Zelftest"
-if python3 -m jarvis.jarvisd --zelftest > /tmp/jarvis-zelftest.json 2>/tmp/jarvis-zelftest.err; then
+# Vanuit /opt/jarvis, anders vindt python de map jarvis/ niet (dat ging mis:
+# "No module named 'jarvis'").
+if (cd "$JARVIS" && python3 -m jarvis.jarvisd --zelftest) > /tmp/jarvis-zelftest.json 2>/tmp/jarvis-zelftest.err; then
     cat /tmp/jarvis-zelftest.json
     if grep -q '"klaar": true' /tmp/jarvis-zelftest.json; then
         echo "ZELFTEST OK"

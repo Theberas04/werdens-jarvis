@@ -115,9 +115,10 @@ stuk is, en — als je `meld_herstel: true` zet — als de dienst het weer doet.
 
 ## Testen zonder telefoon
 
-In de container:
+In de container (vanuit `/opt/jarvis`, anders vindt python de map `jarvis/` niet):
 
 ```bash
+cd /opt/jarvis
 python3 -m jarvis.jarvisd --zelftest          # spraak in, spraak uit, brein, AMI
 python3 -m alarm.wacht --proef                # wat zou de waakhond doen?
 python3 -m tools.proefgesprek --vraag vraag.wav --uit antwoord.wav

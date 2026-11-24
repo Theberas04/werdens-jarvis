@@ -73,7 +73,7 @@ fi
 if grep -q "ZELFTEST OK" "$LOG"; then
     ok "zelftest geslaagd"
 else
-    fout "zelftest niet geslaagd: pct exec $CTID -- python3 -m jarvis.jarvisd --zelftest"
+    fout "zelftest niet geslaagd: pct exec $CTID -- bash -c 'cd /opt/jarvis && python3 -m jarvis.jarvisd --zelftest'"
 fi
 
 if [ "$FOUTEN" -gt 0 ]; then

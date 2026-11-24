@@ -97,7 +97,7 @@ stap "Installatiebestanden ophalen"
 # CDN met Cache-Control: max-age=300, dus een verse push kan daar tot vijf
 # minuten oud blijven — en dan installeert de container een oude versie zonder
 # dat iemand dat ziet. De API en jsDelivr zijn wel vers; raw is de terugval.
-GUEST_VERSIE_MIN="${GUEST_VERSIE_MIN:-1}"
+GUEST_VERSIE_MIN="${GUEST_VERSIE_MIN:-2}"
 haal_vers() {
     haal_pad="$1"; haal_doel="$2"
     if curl -fsSL --max-time 60 -H 'Accept: application/vnd.github.raw' \
@@ -326,15 +326,17 @@ pct exec "$CTID" -- env \
         bash /root/guest-setup.sh 2>&1 | tee "$LOG"
 GUEST_CODE="${PIPESTATUS[0]:-1}"
 if [ "$GUEST_CODE" -ne 0 ]; then
-    fout "installatie in de container mislukte (laatste regels):"
+    fout "de installatie in de container meldde een fout (laatste regels):"
     tail -n 30 "$LOG" | sed 's/^/     /'
     zeg "     Volledige log: pct exec $CTID -- journalctl -u jarvisd -n 50"
-    exit 1
+    let_op "ik controleer hieronder of de diensten wel draaien; de samenvatting komt zo"
 fi
 
 if ! grep -q "ZELFTEST OK" "$LOG"; then
-    fout "de zelftest in de container is niet geslaagd (spraak of brein)"
-    zeg "     Kijk met: pct exec $CTID -- python3 -m jarvis.jarvisd --zelftest"
+    # Nog geen fout: meestal is het brein of de lijn nog niet ingevuld.
+    let_op "de zelftest is nog niet helemaal geslaagd (spraak of brein)"
+    zeg  "     Vul je gegevens in op http://$IP:$WEB_POORT/instellingen en kijk daarna met:"
+    zeg  "     pct exec $CTID -- bash -c 'cd /opt/jarvis && python3 -m jarvis.jarvisd --zelftest'"
 fi
 
 # ---------------------------------------------------- controle buitenaf
@@ -382,7 +384,7 @@ zeg "  van CheapConnect en je mobiele nummer in; Asterisk laadt de trunk meteen 
 zeg ""
 zeg "  Zo bel je Jarvis:      jouw CheapConnect-nummer  ->  container $CTID"
 zeg "  Zo belt Jarvis jou:    knop op de statuspagina, of:"
-zeg "     pct exec $CTID -- python3 -m jarvis.jarvisd --bel \"De back-up is klaar.\""
+zeg "     pct exec $CTID -- bash -c 'cd /opt/jarvis && python3 -m jarvis.jarvisd --bel \"De back-up is klaar.\"'"
 zeg ""
 zeg "  Instellingen:  /etc/jarvis/jarvis.env   (daarna: pct exec $CTID -- systemctl restart jarvisd)"
 zeg "  Controles:     /etc/jarvis/waken.json   (wat de waakhond in de gaten houdt)"
