@@ -116,11 +116,23 @@ haal_vers() {
 if [ -n "$HIER" ] && [ -f "$HIER/guest-setup.sh" ]; then
     cp "$HIER/guest-setup.sh" "$TMP/guest-setup.sh"
     ok "guest-setup.sh (uit deze map)"
-elif haal_vers "guest-setup.sh" "$TMP/guest-setup.sh"; then
-    ok "guest-setup.sh opgehaald"
 else
-    fout "kon guest-setup.sh niet ophalen van $RAW"
-    exit 1
+    opgehaald=0
+    for poging in 1 2 3; do
+        if haal_vers "guest-setup.sh" "$TMP/guest-setup.sh" \
+                && grep -q "^# JARVIS-GUEST-VERSIE=[0-9]" "$TMP/guest-setup.sh"; then
+            opgehaald=1
+            break
+        fi
+        waarschuwing "de kopie die ik kreeg is nog niet vers (poging $poging van 3)"
+        [ "$poging" -lt 3 ] && sleep 30
+    done
+    if [ "$opgehaald" -ne 1 ]; then
+        fout "kon guest-setup.sh niet vers ophalen van GitHub (alleen een oude kopie uit de cache)"
+        zeg  "     Wacht een minuut en draai de one-liner opnieuw."
+        exit 1
+    fi
+    ok "guest-setup.sh opgehaald"
 fi
 
 if [ ! -s "$TMP/guest-setup.sh" ] || ! grep -q "JARVIS-GUEST-SETUP" "$TMP/guest-setup.sh"; then
