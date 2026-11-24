@@ -9,7 +9,7 @@
 #
 # Er staat GEEN sleutel in dit script: het leest API_SERVER_KEY uit de .env van
 # de Hermes-container en schrijft hem in /etc/jarvis/jarvis.env van Jarvis.
-set -euo pipefail
+set -uo pipefail
 
 JARVIS="${1:-140}"
 BREIN_URL="${2:-http://192.168.1.248:8642/v1}"
@@ -21,20 +21,25 @@ HERMES_ENV=/home/hermes/.hermes/.env
 command -v pct >/dev/null || { echo "FOUT: pct niet gevonden — dit is geen Proxmox-host."; exit 1; }
 
 HIER=$(hostname -s)
-# Alle nodes van het cluster, de eigen node eerst.
+klein() { echo "$1" | tr 'A-Z' 'a-z'; }
+
+# Alle nodes van het cluster, de eigen node eerst. Namen kunnen in hoofdletters
+# staan terwijl de hostname dat niet doet; vergelijk dus zonder verschil.
 NODES="$HIER"
 if [ -d /etc/pve/nodes ]; then
   for n in $(ls /etc/pve/nodes 2>/dev/null); do
-    [ "$n" = "$HIER" ] || NODES="$NODES $n"
+    [ "$(klein "$n")" = "$(klein "$HIER")" ] || NODES="$NODES $n"
   done
 fi
 echo "== 0. cluster =="
 echo "   deze host: $HIER | nodes: $NODES"
 
+is_lokaal() { [ "$(klein "$1")" = "$(klein "$HIER")" ]; }
+
 # Commando in een container uitvoeren, waar die container ook staat.
 in_ct() {
   local node="$1" vmid="$2"; shift 2
-  if [ "$node" = "$HIER" ]; then
+  if is_lokaal "$node"; then
     pct exec "$vmid" -- "$@"
   else
     ssh -o BatchMode=yes -o ConnectTimeout=10 "$node" pct exec "$vmid" -- "$@"
@@ -44,38 +49,72 @@ in_ct() {
 # Bestand in een container zetten, waar die container ook staat (via stdin).
 naar_ct() {
   local node="$1" vmid="$2" bron="$3" doel="$4"
-  if [ "$node" = "$HIER" ]; then
+  if is_lokaal "$node"; then
     pct exec "$vmid" -- sh -c "cat > $doel" < "$bron"
   else
     ssh -o BatchMode=yes -o ConnectTimeout=10 "$node" pct exec "$vmid" -- sh -c "cat > $doel" < "$bron"
   fi
 }
 
-# Draaiende containers van een node opvragen.
+# Draaiende containers van een node opvragen; fouten laten we zien.
 lijst_ct() {
   local node="$1"
-  if [ "$node" = "$HIER" ]; then pct list; else ssh -o BatchMode=yes -o ConnectTimeout=10 "$node" pct list; fi
+  if is_lokaal "$node"; then pct list; else ssh -o BatchMode=yes -o ConnectTimeout=10 "$node" pct list; fi
 }
 
 echo "== 1. waar staat de Hermes-container? =="
-HERMES_NODE=""; HERMES_ID=""
+HERMES_NODE=""; HERMES_ID=""; GEVONDEN_MAAR_UIT=""
 for node in $NODES; do
-  for id in $(lijst_ct "$node" 2>/dev/null | awk 'NR>1 && $2=="running" {print $1}'); do
-    if in_ct "$node" "$id" sh -c "test -f $HERMES_ENV && grep -q '^API_SERVER_KEY=' $HERMES_ENV" 2>/dev/null; then
-      naam=$(in_ct "$node" "$id" hostname 2>/dev/null | tr -d '\r')
-      echo "   node $node, container $id ($naam)"
-      if [ "$naam" = "hermesagent" ] || [ -z "$HERMES_ID" ]; then HERMES_NODE="$node"; HERMES_ID="$id"; fi
+  echo "   -- node $node --"
+  RUW=$(lijst_ct "$node" 2>&1)
+  if [ $? -ne 0 ]; then
+    echo "      kon de containerlijst van $node niet ophalen:"
+    echo "$RUW" | sed 's/^/      /'
+    continue
+  fi
+  echo "$RUW" | sed 's/^/      /'
+  for id in $(echo "$RUW" | awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $1}'); do
+    status=$(echo "$RUW" | awk -v id="$id" '$1==id {print $2}')
+    naam=$(in_ct "$node" "$id" hostname 2>/dev/null | tr -d '\r')
+    # Naam uit de containerlijst als de container niet draait (dan kan er geen commando in).
+    [ -n "$naam" ] || naam=$(echo "$RUW" | awk -v id="$id" '$1==id {print $NF}')
+    heeft=$(in_ct "$node" "$id" sh -c "test -f $HERMES_ENV && grep -q '^API_SERVER_KEY=' $HERMES_ENV && echo ja" 2>/dev/null | tr -d '\r')
+    echo "      container $id ($naam, $status): Hermes-sleutel ${heeft:-nee}"
+    if [ "$heeft" = "ja" ]; then
+      if [ "$status" = "running" ]; then
+        if [ "$naam" = "hermesagent" ] || [ -z "$HERMES_ID" ]; then HERMES_NODE="$node"; HERMES_ID="$id"; fi
+      else
+        GEVONDEN_MAAR_UIT="$node:$id"
+      fi
+    elif [ "$status" != "running" ]; then
+      # Een uitstaande container met 'hermes' in de naam is waarschijnlijk de gezochte.
+      case "$naam" in *hermes*|*Hermes*) GEVONDEN_MAAR_UIT="$node:$id";; esac
     fi
   done
 done
 if [ -z "$HERMES_ID" ]; then
-  echo "FOUT: geen draaiende container gevonden met $HERMES_ENV en een API_SERVER_KEY."
-  echo "      Staat de Hermes-container aan? (pct list, ook op de andere node)"
+  if [ -n "$GEVONDEN_MAAR_UIT" ]; then
+    echo "FOUT: de Hermes-container ($GEVONDEN_MAAR_UIT) staat UIT. Start hem en draai dit opnieuw:"
+    echo "      pct start ${GEVONDEN_MAAR_UIT#*:}"
+  else
+    echo "FOUT: geen container gevonden met $HERMES_ENV en een API_SERVER_KEY."
+    echo "      Draait de Hermes-container wel? Hieronder wat er wél in het cluster staat:"
+    for node in $NODES; do
+      echo "      -- $node --"
+      lijst_ct "$node" 2>&1 | sed 's/^/         /'
+    done
+    if command -v qm >/dev/null; then
+      echo "      virtuele machines (misschien draait Hermes in een VM, niet in een container):"
+      qm list 2>&1 | sed 's/^/         /'
+    fi
+    echo "      Staat Hermes op een ándere machine die niet in dit cluster zit, gebruik dan:"
+    echo "      bash zet-brein-140.sh $JARVIS $BREIN_URL $BREIN_MODEL   (met de sleutel in een bestand, zie de repo)"
+  fi
   exit 1
 fi
 K=$(in_ct "$HERMES_NODE" "$HERMES_ID" sh -c "grep -o 'API_SERVER_KEY=.*' $HERMES_ENV | cut -d= -f2- | tr -d '\"' | tr -d '\r'")
 if [ "${#K}" -lt 20 ]; then echo "FOUT: sleutel uit container $HERMES_ID ziet er niet goed uit (${#K} tekens)."; exit 1; fi
-echo "   sleutel: ${#K} tekens, sha256 $(printf '%s' "$K" | sha256sum | cut -c1-16)"
+echo "   gevonden: node $HERMES_NODE, container $HERMES_ID — sleutel ${#K} tekens, sha256 $(printf '%s' "$K" | sha256sum | cut -c1-16)"
 
 echo "== 2. waar staat de Jarvis-container? =="
 JARVIS_NODE=""
