@@ -88,7 +88,9 @@ external_signaling_address = jouw.publieke.ip
   zelf noemt: hun FAQ gebruikt `voip.cheapconnect.net` als SIP-server (de
   trunk-handleiding `sip.cheapconnect.net`), en de naam `asterisk` is op hun
   platform gereserveerd — daarom zet `asterisk/pjsip.conf` een eigen
-  `user_agent=JarvisPBX` in de transport.
+  `user_agent=JarvisPBX`. Let op: die hoort in de sectie `[global]`. Zet je hem
+  in `[transport-udp]`, dan is het geen geldige optie, laadt de transport niet
+  en verdwijnt de registratie helemaal uit `pjsip show registrations`.
 - **Belt wel, geen geluid**: RTP wordt geblokkeerd. Meestal is dat de router die
   "SIP ALG" aan heeft staan — zet die uit, dat lost het bijna altijd op.
 - **Jarvis belt, maar de melding is stil**: kijk of het wav-bestand bestaat in
