@@ -62,6 +62,11 @@ Open `http://<ip-van-de-container>:8099/instellingen` en vul in:
   `~/.hermes/.env`) en eventueel een ander model;
 - wat de **waakhond** in de gaten moet houden.
 
+In het paneel **Brein: aan welke Hermes is hij gekoppeld** bewaar je die
+combinatie onder een naam, zodat je later met één klik tussen Hermes-instances
+wisselt (en met **Test** meteen ziet of die instance antwoordt en hoe snel). Zie
+[docs/INSTALLATIE.md](docs/INSTALLATIE.md#een-eigen-brein-kiezen-en-tussen-meerdere-wisselen).
+
 Opslaan is genoeg: Asterisk leest de nieuwe trunk meteen in en de dienst gebruikt
 de nieuwe waarden zonder herstart. Wat er nog ontbreekt, staat als gele balk
 bovenaan de statuspagina. Wachtwoorden worden nooit meer aan de pagina

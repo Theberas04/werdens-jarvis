@@ -96,6 +96,7 @@ class Config:
         "JARVIS_MELDING_MAP": "/var/lib/jarvis/meldingen",
         "JARVIS_ENV_PAD": "/etc/jarvis/jarvis.env",
         "JARVIS_WAKEN_PAD": "/etc/jarvis/waken.json",
+        "JARVIS_BREINNEN_PAD": "/etc/jarvis/breinen.json",
         "JARVIS_TEMPLATE_MAP": "/opt/jarvis/asterisk",
         "JARVIS_ASTERISK_MAP": "/etc/asterisk",
         "JARVIS_GEEN_BELLEN": "0",
@@ -104,11 +105,24 @@ class Config:
 
     def __init__(self, overschrijf=None):
         self._overschrijf = dict(overschrijf) if overschrijf else {}
-        self._w = dict(self.STANDAARD)
-        self._w.update(_lees_alles({k: v for k, v in os.environ.items() if k in self.STANDAARD}))
-        self._w.update({k: v for k, v in os.environ.items() if k in self.STANDAARD})
-        if overschrijf:
-            self._w.update(overschrijf)
+        self._w = self._bouw()
+
+    def _bouw(self):
+        """Bouw de verzameling op: standaard, omgeving, bestanden, overschrijf.
+
+        Let op de volgorde: de bestanden komen ná de omgevingsvariabelen. In de
+        container laadt systemd /etc/jarvis/jarvis.env in de omgeving van de
+        dienst, en die waarden zijn zo oud als de start van de dienst. Wat de
+        instellingenpagina opschrijft is nieuwer, dus dat moet winnen — anders
+        zou een wijziging pas na een herstart werken.
+        """
+        omgeving = {k: v for k, v in os.environ.items() if k in self.STANDAARD}
+        waarden = dict(self.STANDAARD)
+        waarden.update(omgeving)
+        waarden.update(_lees_alles(omgeving))
+        if self._overschrijf:
+            waarden.update(self._overschrijf)
+        return waarden
 
     def __getitem__(self, sleutel):
         return self._w[sleutel]
@@ -151,10 +165,5 @@ class Config:
         te maken heeft (nummers, adressen, sleutels, drempels) wordt per gebruik
         uit deze verzameling gelezen.
         """
-        nieuw = dict(self.STANDAARD)
-        nieuw.update(_lees_alles({k: v for k, v in os.environ.items() if k in self.STANDAARD}))
-        nieuw.update({k: v for k, v in os.environ.items() if k in self.STANDAARD})
-        if self._overschrijf:
-            nieuw.update(self._overschrijf)
-        self._w = nieuw
+        self._w = self._bouw()
         return self.als_dict()

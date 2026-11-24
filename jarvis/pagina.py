@@ -77,6 +77,12 @@ nav.tabs a.aan{background:var(--accent);border-color:var(--accent);color:#fff}
 .veld .foutmelding{color:var(--fout);font-size:12.5px}
 .vlak{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:13.5px}
 .vlak input{width:auto}
+.brein-rij{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;
+ border:1px solid var(--line);border-radius:12px;background:var(--pane2);padding:11px 13px;margin-top:12px;flex-wrap:wrap}
+.brein-rij .knoppen{margin-top:0}
+.tag{display:inline-block;background:var(--accent);color:#fff;border-radius:999px;padding:1px 9px;font-size:11.5px;font-weight:650}
+.klein{color:var(--txt2);font-size:12.5px;margin-top:4px}
+.klein.fout{color:var(--fout)}
 .let{background:#fff8e6;border:1px solid #f0dfae;border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:13.5px}
 .let b{color:var(--let)}
 .melding ul{margin:6px 0 0 18px;padding:0}
@@ -102,6 +108,7 @@ function tijd(){
     q('#lijnstip').className = 'stip' + (d.telefoon_ingericht ? '' : ' let');
     q('#model').textContent = d.brein.model;
     q('#breinurl').textContent = d.brein.url;
+    q('#breinnaam').textContent = d.brein.naam || 'niet bewaard onder een naam';
     var g = d.gesprekken || [];
     var lijst = q('#gesprekken');
     if(!g.length){ lijst.innerHTML = '<li class="zacht">Nog geen gesprekken.</li>'; }
@@ -221,6 +228,7 @@ PAGINA = """<!doctype html>
     <div class="kaart">
       <div class="kaart-kop">Brein</div>
       <div class="kaart-body">
+        <div class="rij"><span>Gekoppeld aan</span><b id="breinnaam">&mdash;</b></div>
         <div class="rij"><span>Model</span><b id="model">?</b></div>
         <div class="rij"><span>Endpoint</span><b id="breinurl">?</b></div>
         <p class="uitleg">Standaard is dit Hermes: die kan diensten nakijken, logboeken lezen en
@@ -315,9 +323,87 @@ function laadStatus(){
     }
   }).catch(function(){});
 }
+function breinMelding(tekst, isFout){
+  var m=q('#brein-melding'); if(!m) return;
+  m.hidden=false; m.className='klein'+(isFout?' fout':''); m.textContent=tekst;
+}
+function breinenLaad(){
+  var vak=q('#breinen'); if(!vak) return;
+  fetch('/api/breinen').then(function(r){return r.json()}).then(function(d){
+    q('#brein-actief').textContent = d.actief.naam ? (d.actief.naam+' ('+(d.actief.model||'geen model')+')')
+      : ((d.actief.url||'nog niet ingesteld')+' ('+(d.actief.model||'geen model')+')');
+    vak.textContent='';
+    var lijst=d.bewaard||[];
+    if(!lijst.length){
+      var leeg=document.createElement('div'); leeg.className='klein';
+      leeg.textContent='Nog geen bewaarde breinen. Vul hierboven een endpoint in en bewaar het onder een naam.';
+      vak.appendChild(leeg); return;
+    }
+    for(var i=0;i<lijst.length;i++){ vak.appendChild(breinRij(lijst[i])); }
+  }).catch(function(e){ breinMelding('Kon de breinenlijst niet ophalen: '+e, true); });
+}
+function breinRij(b){
+  var rij=document.createElement('div'); rij.className='brein-rij';
+  var links=document.createElement('div');
+  var naam=document.createElement('b'); naam.textContent=b.naam; links.appendChild(naam);
+  if(b.actief){ var tag=document.createElement('span'); tag.className='tag'; tag.textContent='actief';
+    links.appendChild(document.createTextNode(' ')); links.appendChild(tag); }
+  var onder=document.createElement('div'); onder.className='klein';
+  onder.textContent=b.url+' \u00b7 '+(b.model||'geen model')+(b.sleutel_ingevuld?' \u00b7 sleutel ingevuld':' \u00b7 geen sleutel');
+  links.appendChild(onder); rij.appendChild(links);
+  var knoppen=document.createElement('div'); knoppen.className='knoppen';
+  var paren=[['gebruik','Gebruik'],['proef','Test'],['weg','Verwijder']];
+  for(var i=0;i<paren.length;i++){
+    var knop=document.createElement('button'); knop.className='knop'; knop.textContent=paren[i][1];
+    knop.setAttribute('data-doe',paren[i][0]);
+    knop.addEventListener('click',(function(actie,k){ return function(){ breinDoe(actie,b.naam,k); };})(paren[i][0],knop));
+    knoppen.appendChild(knop);
+  }
+  rij.appendChild(knoppen);
+  return rij;
+}
+function breinDoe(actie, naam, knop){
+  if(knop) knop.disabled=true;
+  if(actie==='proef'){ breinMelding('Bezig met testen...', false); }
+  fetch('/api/breinen',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({actie:actie, naam:naam})})
+    .then(function(r){return r.json()}).then(function(d){
+      if(knop) knop.disabled=false;
+      if(actie==='proef'){
+        breinMelding(d.klaar?('Antwoord in '+d.seconden+' s: '+d.antwoord):('Mislukte: '+(d.fout||'onbekend')), !d.klaar);
+        return;
+      }
+      if(!d.gelukt){ breinMelding(d.fout||'Mislukte', true); return; }
+      if(actie==='gebruik'){
+        breinMelding('Jarvis gebruikt nu '+d.naam+'.', false);
+        var u=q('#JARVIS_BREIN_URL'), m=q('#JARVIS_BREIN_MODEL');
+        if(u) u.value=d.url||''; if(m) m.value=d.model||'';
+      } else {
+        breinMelding('Verwijderd: '+d.naam, false);
+      }
+      breinenLaad(); laadStatus();
+    }).catch(function(e){ if(knop) knop.disabled=false; breinMelding('Mislukte: '+e, true); });
+}
+function breinBewaar(){
+  var naam=(q('#brein-naam').value||'').trim();
+  if(!naam){ breinMelding('Geef eerst een naam.', true); return; }
+  var u=q('#JARVIS_BREIN_URL'), m=q('#JARVIS_BREIN_MODEL'), s=q('#JARVIS_BREIN_SLEUTEL');
+  breinMelding('Bezig met bewaren...', false);
+  fetch('/api/breinen',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({actie:'bewaren', naam:naam, url:(u?u.value:''), model:(m?m.value:''), sleutel:(s?s.value:'')})})
+    .then(function(r){return r.json()}).then(function(d){
+      if(!d.gelukt){ breinMelding(d.fout||'Mislukte', true); return; }
+      q('#brein-naam').value='';
+      breinMelding((d.bijgewerkt?'Bijgewerkt: ':'Bewaard: ')+d.naam, false);
+      breinenLaad();
+    }).catch(function(e){ breinMelding('Mislukte: '+e, true); });
+}
 document.addEventListener('DOMContentLoaded', function(){
   laadStatus();
+  breinenLaad();
   q('#bewaarknop').addEventListener('click', bewaar);
+  q('#brein-bewaar').addEventListener('click', breinBewaar);
+  q('#brein-proef').addEventListener('click', function(){ breinDoe('proef', ''); });
 });
 """
 
@@ -342,6 +428,27 @@ INSTELLINGEN_BIJZONDER = """<!doctype html>
   <div class="let">Asterisk: <b id="lijnstatus">status ophalen...</b> Na opslaan leest Asterisk de nieuwe
   trunk meteen in &mdash; je hoeft niets te herstarten.</div>
   __FORMULIER__
+  <div class="groep">
+    <div class="groep-kop">Brein: aan welke Hermes is hij gekoppeld</div>
+    <div class="groep-body">
+      <p class="uitleg">Hierboven staan het adres, de sleutel en het model van het brein dat nu gebruikt wordt.
+      Bewaar die combinatie hieronder onder een naam, dan wissel je met één klik: deze Hermes, een tweede Hermes
+      in je netwerk, of een testmodel. Wisselen werkt meteen &mdash; een lopend gesprek daarna gebruikt het nieuwe
+      brein, zonder herstart.</p>
+      <div class="klein">Nu actief: <b id="brein-actief">ophalen...</b></div>
+      <div id="breinen"></div>
+      <div class="veld">
+        <label for="brein-naam">Huidige brein bewaren als</label>
+        <input type="text" id="brein-naam" placeholder="bijvoorbeeld: Hermes in de woonkamer">
+        <span class="uitleg">Bewaar wat hierboven staat (endpoint, sleutel, model) onder een naam die je herkent.</span>
+      </div>
+      <div class="knoppen">
+        <button class="knop" id="brein-bewaar">Bewaar huidige brein</button>
+        <button class="knop" id="brein-proef">Test het actieve brein</button>
+      </div>
+      <div class="klein" id="brein-melding" hidden></div>
+    </div>
+  </div>
   <div class="groep">
     <div class="groep-kop">Waakhond: wat moet er in de gaten gehouden worden</div>
     <div class="groep-body">
@@ -510,6 +617,8 @@ def maak_handler(jarvis):
             if pad == "/api/status":
                 uitgebreid = "uitgebreid=1" in self.path
                 return self._json(200, jarvis.status(uitgebreid=uitgebreid))
+            if pad == "/api/breinen":
+                return self._json(200, jarvis.breinen())
             if pad == "/instellingen":
                 return self._stuur(200, _instellingen_pagina(jarvis), "text/html; charset=utf-8")
             return self._json(404, {"fout": "onbekende route"})
@@ -527,6 +636,21 @@ def maak_handler(jarvis):
                     tekst, reden=gegevens.get("reden", ""), nummer=gegevens.get("nummer", "")))
             if pad == "/api/bel":
                 return self._json(200, jarvis.bel_gesprek(gegevens.get("nummer", "")))
+            if pad == "/api/breinen":
+                actie = (gegevens.get("actie") or "").strip().lower()
+                naam = gegevens.get("naam") or ""
+                if actie in ("bewaren", "bewaar", "opslaan"):
+                    return self._json(200, jarvis.brein_bewaar(
+                        naam, gegevens.get("url"), gegevens.get("model"), gegevens.get("sleutel")))
+                if actie in ("gebruiken", "gebruik", "kies"):
+                    return self._json(200, jarvis.brein_kies(naam))
+                if actie in ("verwijderen", "weg", "verwijder"):
+                    return self._json(200, jarvis.brein_verwijder(naam))
+                if actie in ("proef", "test", "testen"):
+                    return self._json(200, jarvis.brein_proef(
+                        naam, gegevens.get("url"), gegevens.get("model"), gegevens.get("sleutel")))
+                return self._json(400, {"gelukt": False,
+                                        "fout": "onbekende actie: %s" % (actie or "(leeg)")})
             if pad == "/api/instellingen":
                 return self._json(200, jarvis.instellingen_opslaan(
                     gegevens.get("velden") or {}, gegevens.get("waken")))

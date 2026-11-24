@@ -106,7 +106,31 @@ python3 -m alarm.wacht --proef
 python3 -m alarm.wacht --toon
 ```
 
-## Een eigen brein kiezen
+## Een eigen brein kiezen (en tussen meerdere wisselen)
+
+Onderaan de instellingenpagina staat het paneel **Brein: aan welke Hermes is hij
+gekoppeld**. Daar zie je waar hij nu mee praat (naam, endpoint, model, of er een
+sleutel staat) en kun je:
+
+- **de huidige combinatie bewaren** onder een naam die je herkent ("Hermes in de
+  woonkamer", "testmodel");
+- **wisselen met één klik** — de gekozen gegevens gaan naar
+  `/etc/jarvis/jarvis.env` en de draaiende dienst gebruikt ze meteen, zonder
+  herstart (een gesprek dat daarna begint, gebruikt het nieuwe brein);
+- **testen** met één echte korte vraag: je ziet het antwoord, de seconden en het
+  model dat antwoordde — handig om te weten of een endpoint bereikbaar is voordat
+  je iemand belt;
+- **een brein verwijderen** (het laatste bewaarde brein blijft staan).
+
+De bewaarde lijst staat in `/etc/jarvis/breinen.json` (rechten 640, de sleutels
+horen erbij). Sleutels gaan nooit terug naar de pagina: je ziet alleen of er een
+sleutel is ingevuld. Wisselen kan ook in de API:
+
+```
+curl -s -XPOST http://<ip>:8099/api/breinen -H 'Content-Type: application/json' \
+     -d '{"actie":"gebruiken","naam":"Mijn Hermes"}'
+# acties: bewaren, gebruiken, verwijderen, proef   (GET /api/breinen toont de lijst)
+```
 
 Jarvis praat met elke OpenAI-compatible chat-endpoint. Twee routes die allebei
 werken:

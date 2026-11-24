@@ -318,7 +318,8 @@ class Jarvis:
             "telefoon_ingericht": self.cfg.telefoon_ingericht(),
             "trunk_nummer": self.cfg["TRUNK_NUMMER"],
             "mijn_mobiel": _maskeer(self.cfg["MIJN_MOBIEL"]),
-            "brein": {"url": self.cfg["JARVIS_BREIN_URL"], "model": self.cfg["JARVIS_BREIN_MODEL"]},
+            "brein": {"url": self.cfg["JARVIS_BREIN_URL"], "model": self.cfg["JARVIS_BREIN_MODEL"],
+                      "naam": self.brein_naam()},
             "stem_modus": self.cfg["JARVIS_STEM"],
             "gesprekken": list(reversed(self.gesprekken[-10:])),
             "laatste_melding": self._laatste_melding,
@@ -342,6 +343,50 @@ class Jarvis:
         waarde = self._veilig(instellingen.asterisk_status)
         self._asterisk = {"tijd": nu, "waarde": waarde}
         return waarde
+
+    def breinen(self):
+        """Het actieve brein en de bewaarde lijst (zonder geheimen)."""
+        from . import instellingen
+        return self._veilig(instellingen.breinen_overzicht)
+
+    def brein_naam(self):
+        """Naam van het actieve brein (leeg als het niet in de lijst staat)."""
+        from . import instellingen
+        try:
+            return instellingen.breinen_overzicht()["actief"]["naam"]
+        except Exception:
+            return ""
+
+    def brein_kies(self, naam):
+        """Wisselen naar een bewaard brein; meteen in gebruik, geen herstart."""
+        from . import instellingen
+        uit = instellingen.gebruik_brein(naam, log=self.log)
+        if uit.get("gelukt"):
+            self.cfg.herlaad()
+        return uit
+
+    def brein_bewaar(self, naam, url=None, model=None, sleutel=None):
+        from . import instellingen
+        return instellingen.bewaar_brein(naam, url, model, sleutel)
+
+    def brein_verwijder(self, naam):
+        from . import instellingen
+        return instellingen.verwijder_brein(naam)
+
+    def brein_proef(self, naam=None, url=None, model=None, sleutel=None):
+        """Eén echte vraag naar een brein: antwoordt het, en hoe snel?"""
+        from . import instellingen
+        if naam:
+            rij = next((r for r in instellingen.lees_breinen()
+                        if r["naam"].lower() == str(naam).strip().lower()), None)
+            if not rij:
+                return {"klaar": False, "fout": "onbekend brein: %s" % naam}
+            url, model, sleutel = rij["url"], rij["model"], rij["sleutel"]
+        proef = instellingen.test_brein(url, model, sleutel)
+        self.log("breinproef %s: %s" % (naam or url or "actief",
+                                        "ok in %ss" % proef.get("seconden") if proef.get("klaar")
+                                        else "mislukt (%s)" % proef.get("fout")))
+        return proef
 
     def instellingen_opslaan(self, velden, waken=None):
         """Wat de instellingenpagina doet: opschrijven, toepassen, controleren."""

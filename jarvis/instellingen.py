@@ -23,6 +23,8 @@ import re
 import shutil
 import subprocess
 import time
+import urllib.error
+import urllib.request
 
 ENV_PAD = "/etc/jarvis/jarvis.env"
 WAKEN_PAD = "/etc/jarvis/waken.json"
@@ -405,3 +407,199 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+# ------------------------------------------------------------------ breinen
+#
+# Jarvis kan aan meer dan één brein gekoppeld zijn: deze Hermes, een tweede
+# Hermes ergens anders in het netwerk, een testmodel. De actieve keuze staat in
+# jarvis.env (JARVIS_BREIN_URL/SLEUTEL/MODEL) en wordt daar meteen gebruikt; het
+# bestand hieronder is de lijst met bewaarde breinen waar je tussen kunt
+# wisselen.
+
+BREINNEN_PAD = "/etc/jarvis/breinen.json"
+PROEF_VRAAG = "Antwoord in één woord: ben je er?"
+
+
+def _breinnen_pad():
+    try:
+        from .config import Config
+        return Config()["JARVIS_BREINNEN_PAD"] or BREINNEN_PAD
+    except Exception:
+        return BREINNEN_PAD
+
+
+def lees_breinen(pad=None):
+    """De bewaarde breinen als lijst van dicts."""
+    pad = pad or _breinnen_pad()
+    try:
+        with open(pad, encoding="utf-8") as f:
+            gegevens = json.load(f)
+    except (OSError, ValueError):
+        return []
+    if isinstance(gegevens, dict):
+        gegevens = gegevens.get("breinen") or []
+    if not isinstance(gegevens, list):
+        return []
+    uit = []
+    for rij in gegevens:
+        if not isinstance(rij, dict) or not (rij.get("naam") or "").strip():
+            continue
+        uit.append({
+            "naam": str(rij.get("naam")).strip()[:60],
+            "url": (rij.get("url") or "").strip(),
+            "model": (rij.get("model") or "").strip(),
+            "sleutel": (rij.get("sleutel") or "").strip(),
+        })
+    return uit
+
+
+def schrijf_breinen(lijst, pad=None):
+    pad = pad or _breinnen_pad()
+    os.makedirs(os.path.dirname(pad), exist_ok=True)
+    tijdelijk = pad + ".tmp"
+    with open(tijdelijk, "w", encoding="utf-8") as f:
+        json.dump({"breinen": lijst}, f, indent=2, ensure_ascii=False)
+    os.chmod(tijdelijk, 0o640)
+    os.replace(tijdelijk, pad)
+    return pad
+
+
+def _vind(lijst, naam):
+    kaal = (naam or "").strip().lower()
+    for rij in lijst:
+        if rij["naam"].lower() == kaal:
+            return rij
+    return None
+
+
+def huidig_brein():
+    """Wat er nu in de instellingen staat (de actieve keuze)."""
+    env = lees_env()
+    return {
+        "url": env.get("JARVIS_BREIN_URL", ""),
+        "model": env.get("JARVIS_BREIN_MODEL", ""),
+        "sleutel": env.get("JARVIS_BREIN_SLEUTEL", ""),
+    }
+
+
+def bewaar_brein(naam, url=None, model=None, sleutel=None):
+    """De huidige (of meegegeven) brein-gegevens onder een naam bewaren."""
+    naam = (naam or "").strip()
+    if not naam:
+        return {"gelukt": False, "fout": "geef het brein een naam"}
+    if len(naam) > 60:
+        return {"gelukt": False, "fout": "die naam is te lang"}
+    huidig = huidig_brein()
+    rij = {
+        "naam": naam,
+        "url": (url or huidig["url"]).strip(),
+        "model": (model or huidig["model"]).strip(),
+        "sleutel": (sleutel or huidig["sleutel"]).strip(),
+    }
+    if not rij["url"]:
+        return {"gelukt": False, "fout": "er is nog geen brein-endpoint ingevuld"}
+    if not re.match(r"^https?://", rij["url"]):
+        return {"gelukt": False, "fout": "een adres begint met http:// of https://"}
+    lijst = lees_breinen()
+    bestaand = _vind(lijst, naam)
+    if bestaand:
+        bestaand.update(rij)
+        bijgewerkt = True
+    else:
+        lijst.append(rij)
+        bijgewerkt = False
+    schrijf_breinen(lijst)
+    return {"gelukt": True, "naam": naam, "bijgewerkt": bijgewerkt,
+            "aantal": len(lijst)}
+
+
+def gebruik_brein(naam, log=print):
+    """Dit brein actief maken: de gegevens gaan naar jarvis.env, meteen in gebruik."""
+    rij = _vind(lees_breinen(), naam)
+    if not rij:
+        return {"gelukt": False, "fout": "onbekend brein: %s" % naam}
+    schrijf_env({
+        "JARVIS_BREIN_URL": rij["url"],
+        "JARVIS_BREIN_MODEL": rij["model"],
+        "JARVIS_BREIN_SLEUTEL": rij["sleutel"],
+    })
+    log("brein gewisseld naar %s (%s, %s)" % (rij["naam"], rij["url"], rij["model"] or "-"))
+    return {"gelukt": True, "naam": rij["naam"], "url": rij["url"], "model": rij["model"]}
+
+
+def verwijder_brein(naam):
+    lijst = lees_breinen()
+    rij = _vind(lijst, naam)
+    if not rij:
+        return {"gelukt": False, "fout": "onbekend brein: %s" % naam}
+    if len(lijst) == 1:
+        return {"gelukt": False, "fout": "dit is je enige bewaarde brein"}
+    lijst = [r for r in lijst if r is not rij]
+    schrijf_breinen(lijst)
+    return {"gelukt": True, "naam": rij["naam"], "aantal": len(lijst)}
+
+
+def test_brein(url=None, model=None, sleutel=None, tekst=None, tijd=None):
+    """Eén echte korte vraag naar een brein, met de klok erbij.
+
+    Zo weet je vóór het bellen of dit endpoint antwoordt, en hoe snel.
+    """
+    huidig = huidig_brein()
+    url = (url or huidig["url"]).strip()
+    model = (model or huidig["model"]).strip()
+    sleutel = (sleutel if sleutel is not None else huidig["sleutel"]) or ""
+    if not url:
+        return {"klaar": False, "fout": "nog geen brein-endpoint ingevuld"}
+    if not re.match(r"^https?://", url):
+        return {"klaar": False, "fout": "een adres begint met http:// of https://"}
+    basis = url.rstrip("/")
+    if not basis.endswith("/v1"):
+        basis += "/v1"
+    lading = {
+        "model": model or "hermes-agent",
+        "messages": [{"role": "user", "content": tekst or PROEF_VRAAG}],
+        "stream": False,
+    }
+    kop = {"Content-Type": "application/json"}
+    if sleutel.strip():
+        kop["Authorization"] = "Bearer " + sleutel.strip()
+    verzoek = urllib.request.Request(basis + "/chat/completions",
+                                     data=json.dumps(lading).encode(), headers=kop)
+    begin = time.time()
+    try:
+        with urllib.request.urlopen(verzoek, timeout=int(tijd or 60)) as antwoord:
+            gegevens = json.loads(antwoord.read().decode("utf-8", "replace"))
+        seconden = round(time.time() - begin, 2)
+        inhoud = gegevens["choices"][0]["message"]["content"] or ""
+        return {"klaar": True, "seconden": seconden, "antwoord": inhoud.strip()[:200],
+                "model": gegevens.get("model") or model}
+    except urllib.error.HTTPError as fout:
+        detail = fout.read()[:200].decode("utf-8", "replace")
+        return {"klaar": False, "fout": "HTTP %s: %s" % (fout.code, detail)}
+    except Exception as fout:
+        return {"klaar": False, "fout": "onbereikbaar: %r" % (fout,)}
+
+
+def breinen_overzicht():
+    """Voor de pagina: het actieve brein en de bewaarde lijst, zonder geheimen."""
+    actief = huidig_brein()
+    bewaard = []
+    for rij in lees_breinen():
+        zelfde = (rij["url"] == actief["url"] and rij["model"] == actief["model"])
+        bewaard.append({
+            "naam": rij["naam"],
+            "url": rij["url"],
+            "model": rij["model"],
+            "sleutel_ingevuld": bool(rij["sleutel"]),
+            "actief": zelfde,
+        })
+    return {
+        "actief": {
+            "url": actief["url"],
+            "model": actief["model"],
+            "sleutel_ingevuld": bool(actief["sleutel"]),
+            "naam": next((b["naam"] for b in bewaard if b["actief"]), ""),
+        },
+        "bewaard": bewaard,
+        "pad": _breinnen_pad(),
+    }
