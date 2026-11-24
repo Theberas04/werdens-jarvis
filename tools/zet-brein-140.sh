@@ -65,13 +65,21 @@ done
 
 is_lokaal() { [ "$1" = "$HIER" ]; }
 
+# ssh plakt zijn argumenten aan elkaar tot één regel die de remote shell
+# opnieuw parseert. Alles wat je doorgeeft moet dus gequoteerd worden, anders
+# valt een `sh -c "..."` of een `>` uit elkaar en belandt de omleiding op de
+# host in plaats van in de container.
+q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\''/g")"; }
+
 # Commando in een container uitvoeren, waar die container ook staat.
 in_ct() {
   local node="$1" vmid="$2"; shift 2
   if is_lokaal "$node"; then
     pct exec "$vmid" -- "$@" </dev/null
   else
-    ssh $SSH_OPTS "$(ssh_doel "$node")" pct exec "$vmid" -- "$@" </dev/null
+    local cmd="" a
+    for a in "$@"; do cmd="$cmd $(q "$a")"; done
+    ssh $SSH_OPTS "$(ssh_doel "$node")" "pct exec $vmid --$cmd" </dev/null
   fi
 }
 
@@ -81,7 +89,7 @@ naar_ct() {
   if is_lokaal "$node"; then
     pct exec "$vmid" -- sh -c "cat > $doel" < "$bron"
   else
-    ssh $SSH_OPTS "$(ssh_doel "$node")" pct exec "$vmid" -- sh -c "cat > $doel" < "$bron"
+    ssh $SSH_OPTS "$(ssh_doel "$node")" "pct exec $vmid -- sh -c $(q "cat > $doel")" < "$bron"
   fi
 }
 
