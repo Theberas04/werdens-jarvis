@@ -72,6 +72,12 @@ model `hermes-agent`. Anders geef je het mee:
 curl -fsSL https://raw.githubusercontent.com/Theberas04/werdens-jarvis/main/tools/zet-brein-140.sh | bash -s -- 140 http://192.168.1.248:8642/v1
 ```
 
+**Staan Jarvis en Hermes op verschillende nodes van hetzelfde cluster?** Dat mag:
+het script kijkt in `/etc/pve/nodes` welke nodes er zijn, zoekt de
+Hermes-container op elke node en gaat voor de andere node via `ssh` (dat kan in
+een cluster zonder wachtwoord). Je hoeft het dus niet op een bepaalde host te
+draaien.
+
 De laatste regel van de uitvoer is de proefaanroep: **HTTP 200** betekent dat de
 sleutel klopt en de dienst ermee draait, **401** betekent dat de sleutel in de
 `.env` van de Hermes-container niet de sleutel is die zijn gateway gebruikt.
