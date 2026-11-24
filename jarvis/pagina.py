@@ -160,8 +160,12 @@ function proef(){
     regels.push('spraak uit: ' + (d.stem.tts.klaar ? 'ok (' + d.stem.tts.seconden + ' s)' : 'fout - ' + d.stem.tts.fout));
     regels.push('spraak in: ' + (d.stem.stt.klaar ? 'ok, hoorde "' + d.stem.stt.tekst + '"' : 'fout - ' + d.stem.stt.fout));
     regels.push('brein: ' + (d.brein.proef.klaar ? 'ok (' + d.brein.proef.seconden + ' s)' : 'fout - ' + d.brein.proef.fout));
-    regels.push('Asterisk: ' + (d.asterisk.klaar ? 'ok' : 'fout - ' + d.asterisk.fout));
-    toon(regels.join('\\n'), !(d.stem.tts.klaar && d.stem.stt.klaar && d.brein.proef.klaar));
+    var ast = d.asterisk || {};
+    var astTekst = !ast.draait ? 'fout - draait niet' + (ast.detail ? ' (' + ast.detail + ')' : '')
+      : (ast.trunk_geregistreerd ? 'ok, trunk geregistreerd'
+        : 'trunk niet geregistreerd' + (ast.detail ? ' - ' + ast.detail : ''));
+    regels.push('Asterisk: ' + astTekst);
+    toon(regels.join('\\n'), !(d.stem.tts.klaar && d.stem.stt.klaar && d.brein.proef.klaar && ast.draait && ast.trunk_geregistreerd));
   }).catch(function(e){ toon('Proef mislukte: ' + e, true); });
 }
 document.addEventListener('DOMContentLoaded', function(){
