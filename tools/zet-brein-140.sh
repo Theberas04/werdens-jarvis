@@ -36,8 +36,32 @@ if [ -d /etc/pve/nodes ]; then
     [ "$n" = "$HIER" ] || NODES="$NODES $n"
   done
 fi
+# De IP's van de nodes staan in corosync.conf. Nodennamen die alleen in
+# hoofdletters verschillen (Proxmox naast proxmox) lossen via DNS op naar
+# dezelfde machine, dus ssh moet op het adres gebeuren, niet op de naam.
+node_ip() {
+  [ -f /etc/pve/corosync.conf ] || return 0
+  awk -v doel="$1" '
+    /^[[:space:]]*node[[:space:]]*\{/ { naam=""; ip="" }
+    /^[[:space:]]*name:/ { naam=$2 }
+    /^[[:space:]]*ring0_addr:/ { ip=$2 }
+    /^[[:space:]]*\}/ { if (naam==doel && ip!="") { print ip; exit } }
+  ' /etc/pve/corosync.conf
+}
+
+# Waar ssh heen moet voor een node: het adres als we dat kennen, anders de naam.
+ssh_doel() {
+  local ip
+  ip=$(node_ip "$1")
+  if [ -n "$ip" ]; then echo "$ip"; else echo "$1"; fi
+}
+
 echo "== 0. cluster =="
 echo "   deze host: $HIER | nodes: $NODES"
+for n in $NODES; do
+  [ "$n" = "$HIER" ] && continue
+  echo "   node $n → ssh naar $(ssh_doel "$n")"
+done
 
 is_lokaal() { [ "$1" = "$HIER" ]; }
 
@@ -47,7 +71,7 @@ in_ct() {
   if is_lokaal "$node"; then
     pct exec "$vmid" -- "$@"
   else
-    ssh $SSH_OPTS "$node" pct exec "$vmid" -- "$@"
+    ssh $SSH_OPTS "$(ssh_doel "$node")" pct exec "$vmid" -- "$@"
   fi
 }
 
@@ -57,14 +81,14 @@ naar_ct() {
   if is_lokaal "$node"; then
     pct exec "$vmid" -- sh -c "cat > $doel" < "$bron"
   else
-    ssh $SSH_OPTS "$node" pct exec "$vmid" -- sh -c "cat > $doel" < "$bron"
+    ssh $SSH_OPTS "$(ssh_doel "$node")" pct exec "$vmid" -- sh -c "cat > $doel" < "$bron"
   fi
 }
 
 # Draaiende containers van een node opvragen; fouten laten we zien.
 lijst_ct() {
   local node="$1"
-  if is_lokaal "$node"; then pct list; else ssh $SSH_OPTS "$node" pct list; fi
+  if is_lokaal "$node"; then pct list; else ssh $SSH_OPTS "$(ssh_doel "$node")" pct list; fi
 }
 
 echo "== 1. waar staat de Hermes-container? =="
