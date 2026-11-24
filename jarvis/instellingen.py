@@ -231,7 +231,8 @@ def asterisk_status():
                              capture_output=True, text=True, timeout=15)
         regels = [r.strip() for r in reg.stdout.splitlines() if "cheapconnect" in r.lower()]
         uit["ruwe_regels"] = regels
-        uit["trunk_geregistreerd"] = any("registered" in r.lower() for r in regels)
+        uit["trunk_geregistreerd"] = any(
+            "registered" in r.lower() and "unregistered" not in r.lower() for r in regels)
         if not uit["trunk_geregistreerd"] and regels:
             uit["detail"] = regels[0][:200]
     except (OSError, subprocess.TimeoutExpired) as fout:

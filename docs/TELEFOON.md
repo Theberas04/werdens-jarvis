@@ -91,6 +91,24 @@ external_signaling_address = jouw.publieke.ip
   `user_agent=JarvisPBX`. Let op: die hoort in de sectie `[global]`. Zet je hem
   in `[transport-udp]`, dan is het geen geldige optie, laadt de transport niet
   en verdwijnt de registratie helemaal uit `pjsip show registrations`.
+- **Je slaat op zonder het wachtwoord opnieuw te typen, en het blijft
+  `Rejected`**: het veld Trunk-wachtwoord wordt nooit voorgevuld (een geheim
+  hoort niet terug op het scherm) en een leeg veld betekent "laat staan wat er
+  staat". Het journaal noemt bij het opslaan alleen wat écht veranderd is:
+  `journalctl -u jarvisd -n 20` en kijk of `TRUNK_WACHTWOORD` in de regel
+  `instellingen bijgewerkt: …` staat. Staat hij er niet bij, dan is er aan het
+  wachtwoord niets veranderd — hoe vaak je ook op opslaan drukt.
+- **Hetzelfde nummer staat ook op een telefoon of in de app**: CheapConnect
+  staat één SIP-registratie per nummer toe. Twee toestellen op hetzelfde nummer
+  nemen elkaars lijn over, dus de registratie klapt om zodra de ander zich
+  aanmeldt. Vraag in het portaal een gratis extra SIP-account aan (begint met
+  `777…`, onder Prepaid VoIP → SIP accounts) en gebruik dat hier, of een apart
+  trunk-account.
+- **`Rejected` blijft staan terwijl het probleem al verholpen is**: na een
+  `Fatal response` schrijft Asterisk `stopping outbound registration` en doet
+  hij geen nieuwe poging meer. Het `(exp. …s ago)` loopt dan op en de status
+  bevriest. Herladen met `asterisk -rx 'module reload res_pjsip.so'` (of
+  `systemctl restart asterisk`) en daarna opnieuw kijken.
 - **Belt wel, geen geluid**: RTP wordt geblokkeerd. Meestal is dat de router die
   "SIP ALG" aan heeft staan — zet die uit, dat lost het bijna altijd op.
 - **Jarvis belt, maar de melding is stil**: kijk of het wav-bestand bestaat in
