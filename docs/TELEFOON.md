@@ -80,6 +80,15 @@ external_signaling_address = jouw.publieke.ip
 
 - **Geen registratie**: nummer of wachtwoord verkeerd (controleer op
   spaties), of UDP 5060 uitgaand geblokkeerd door je provider.
+- **`Rejected` in `pjsip show registrations`, met `Fatal response '401'` in
+  `/var/log/asterisk/full`**: de server krijgt je inloggegevens en wijst ze af.
+  Gebruikersnaam is je nummer in internationaal formaat zonder `+`
+  (`31463690256`); het wachtwoord is dat van de **trunk** in het portaal — niet
+  je portaal-wachtwoord en niet de sms-API-sleutel. Twee dingen die CheapConnect
+  zelf noemt: hun FAQ gebruikt `voip.cheapconnect.net` als SIP-server (de
+  trunk-handleiding `sip.cheapconnect.net`), en de naam `asterisk` is op hun
+  platform gereserveerd — daarom zet `asterisk/pjsip.conf` een eigen
+  `user_agent=JarvisPBX` in de transport.
 - **Belt wel, geen geluid**: RTP wordt geblokkeerd. Meestal is dat de router die
   "SIP ALG" aan heeft staan — zet die uit, dat lost het bijna altijd op.
 - **Jarvis belt, maar de melding is stil**: kijk of het wav-bestand bestaat in
