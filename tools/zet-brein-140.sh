@@ -69,9 +69,9 @@ is_lokaal() { [ "$1" = "$HIER" ]; }
 in_ct() {
   local node="$1" vmid="$2"; shift 2
   if is_lokaal "$node"; then
-    pct exec "$vmid" -- "$@"
+    pct exec "$vmid" -- "$@" </dev/null
   else
-    ssh $SSH_OPTS "$(ssh_doel "$node")" pct exec "$vmid" -- "$@"
+    ssh $SSH_OPTS "$(ssh_doel "$node")" pct exec "$vmid" -- "$@" </dev/null
   fi
 }
 
@@ -88,7 +88,7 @@ naar_ct() {
 # Draaiende containers van een node opvragen; fouten laten we zien.
 lijst_ct() {
   local node="$1"
-  if is_lokaal "$node"; then pct list; else ssh $SSH_OPTS "$(ssh_doel "$node")" pct list; fi
+  if is_lokaal "$node"; then pct list </dev/null; else ssh $SSH_OPTS "$(ssh_doel "$node")" pct list </dev/null; fi
 }
 
 echo "== 1. waar staat de Hermes-container? =="
