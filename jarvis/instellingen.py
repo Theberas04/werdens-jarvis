@@ -47,7 +47,7 @@ def _paden():
 # Sleutel, label, groep, soort (tekst|geheim|keuze|getal|vlag), uitleg
 VELDEN = [
     ("TRUNK_NUMMER", "Trunk-nummer", "lijn", "tekst",
-     "Je CheapConnect-nummer in internationaal formaat, zonder plus: 31612345678"),
+     "De inlognaam van je SIP-account of trunk: je nummer internationaal (31612345678) of een 777…-account"),
     ("TRUNK_WACHTWOORD", "Trunk-wachtwoord", "lijn", "geheim",
      "Het wachtwoord uit je CheapConnect-portaal"),
     ("CHEAPCONNECT_HOST", "CheapConnect-server", "lijn", "tekst",
@@ -272,17 +272,37 @@ def schrijf_waken(tekst, pad=None):
 def controleer(wijzigingen, huidig):
     """Controleer wat de gebruiker intypt voordat we iets opslaan."""
     fouten = {}
-    for sleutel in ("TRUNK_NUMMER", "MIJN_MOBIEL"):
+    for sleutel in ("MIJN_MOBIEL",):
         waarde = wijzigingen.get(sleutel)
         if waarde is None:
             continue
         kaal = re.sub(r"[^0-9]", "", waarde)
+        if kaal.startswith("00"):
+            kaal = kaal[2:]
         if waarde.strip() and not re.fullmatch(r"[0-9]{8,15}", kaal):
             fouten[sleutel] = "alleen cijfers, internationaal zonder plus (bijvoorbeeld 31612345678)"
         elif waarde.strip() and not kaal.startswith("3"):
             fouten[sleutel] = "een Nederlands nummer begint met 31; laat de plus en de nullen weg"
         else:
             wijzigingen[sleutel] = kaal
+
+    # Dit veld is ook de inlognaam van het SIP-account: een nummer (31…) of een
+    # extra CheapConnect-account (777…). Beide zijn goed; alleen de vorm telt.
+    nummer = wijzigingen.get("TRUNK_NUMMER")
+    if nummer is not None:
+        kaal = re.sub(r"[^0-9]", "", nummer)
+        if kaal.startswith("00"):
+            kaal = kaal[2:]
+        if not nummer.strip():
+            wijzigingen["TRUNK_NUMMER"] = ""
+        elif not re.fullmatch(r"[0-9]{6,20}", kaal):
+            fouten["TRUNK_NUMMER"] = ("de inlognaam van je SIP-account of trunk: alleen cijfers, "
+                                      "internationaal en zonder plus (31463690256, of 777… "
+                                      "voor een extra SIP-account)")
+        elif kaal.startswith("0"):
+            fouten["TRUNK_NUMMER"] = "laat de nul aan het begin weg en zet 31 ervoor: 31463690256"
+        else:
+            wijzigingen["TRUNK_NUMMER"] = kaal
 
     url = wijzigingen.get("JARVIS_BREIN_URL")
     if url is not None and url.strip() and not re.match(r"^https?://", url.strip()):
